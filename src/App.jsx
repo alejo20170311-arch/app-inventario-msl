@@ -100,6 +100,9 @@ import {
   userAvatar,
   userSummary,
 } from "./styles"
+
+const assetUrl = (path) => `${import.meta.env.BASE_URL}${path}`
+
 function App() {
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
   const [productos, setProductos] = useState([])
@@ -166,7 +169,7 @@ function App() {
 
     if (data.estado !== "Activo") {
       setPerfil(null)
-      setErrorLogin("Tu usuario está¡ inactivo. Contacta al administrador.")
+      setErrorLogin("Tu usuario está inactivo. Contacta al administrador.")
       return null
     }
 
@@ -275,7 +278,7 @@ function App() {
     return (
       <main style={{ background: "#E0E5EB", minHeight: "100vh", display: "grid", placeItems: "center", padding: "32px" }}>
         <section style={{ background: "#FFFFFF", borderRadius: "12px", padding: "28px", width: "100%", maxWidth: "420px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
-          <img src="/logo-msl-Azul.jpg" alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
+          <img src={assetUrl("logo-msl-Azul.jpg")} alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
           <h1 style={{ margin: 0, fontSize: "26px" }}>Cargando inventario</h1>
           <p style={{ margin: "10px 0 0" }}>Estamos revisando tu Sesión.</p>
         </section>
@@ -288,7 +291,7 @@ function App() {
       <main style={{ background: "#E0E5EB", minHeight: "100vh", display: "grid", placeItems: "center", padding: "32px" }}>
         <section style={{ background: "#FFFFFF", borderRadius: "12px", overflow: "hidden", width: "100%", maxWidth: "460px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
           <header style={{ background: "#000000", color: "#FFFFFF", padding: "26px" }}>
-            <img src="/logo-msl-blanco.png" alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
+            <img src={assetUrl("logo-msl-blanco.png")} alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
             <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "28px" }}>Inventario Dotación y EPP</h1>
             <p style={{ margin: "8px 0 0", color: "#E0E5EB" }}>Ingreso de usuarios autorizados</p>
           </header>
@@ -548,7 +551,7 @@ function App() {
   ]
   const indicadoresPanel = [
     { texto: "Entregas activas", valor: entregasActivas.length, icono: ClipboardCheck, color: "#0500ff" },
-    { texto: "Itéms entregados este mes", valor: totalEntregadoMes, icono: Boxes, color: "#5b8dff" },
+    { texto: "Ítems entregados este mes", valor: totalEntregadoMes, icono: Boxes, color: "#5b8dff" },
     { texto: "Dotación este mes", valor: dotacionEntregadaMes, icono: Package, color: "#0500ff" },
     { texto: "EPP este mes", valor: eppEntregadoMes, icono: ShieldAlert, color: "#050505" },
   ]
@@ -928,7 +931,7 @@ function App() {
     )
 
     if (productoTieneMovimientos || productoTieneEntregas) {
-      const confirmarInactivar = window.confirm("Este producto ya tiene movimientos o entregas. Para conservar el historial no se puede eliminar. Â¿Quieres marcarlo como inactivo?")
+      const confirmarInactivar = window.confirm("Este producto ya tiene movimientos o entregas. Para conservar el historial no se puede eliminar. ¿Quieres marcarlo como inactivo?")
 
       if (confirmarInactivar) {
         const { data, error } = await supabase
@@ -955,7 +958,7 @@ function App() {
       return
     }
 
-    const confirmar = window.confirm("Â¿Seguro que quieres eliminar este producto?")
+    const confirmar = window.confirm("¿Seguro que quieres eliminar este producto?")
 
     if (confirmar) {
       const { error } = await supabase
@@ -1010,7 +1013,7 @@ function App() {
     )
 
     if (colaboradorTieneEntregas) {
-      const confirmarRetirar = window.confirm("Este colaborador ya tiene entregas. Para conservar el historial no se puede eliminar. Â¿Quieres marcarlo como retirado?")
+      const confirmarRetirar = window.confirm("Este colaborador ya tiene entregas. Para conservar el historial no se puede eliminar. ¿Quieres marcarlo como retirado?")
 
       if (confirmarRetirar) {
         const { data, error } = await supabase
@@ -1037,7 +1040,7 @@ function App() {
       return
     }
 
-    const confirmar = window.confirm("Â¿Seguro que quieres eliminar este colaborador?")
+    const confirmar = window.confirm("¿Seguro que quieres eliminar este colaborador?")
 
     if (confirmar) {
       const { error } = await supabase
@@ -1156,7 +1159,7 @@ function App() {
         if (movimientoCreado) {
           setMovimientos([movimientoCreado, ...movimientos])
         }
-        mostrarMensaje("El producto ya existé. Se sumá la cantidad al stock actual.")
+        mostrarMensaje("El producto ya existe. Se sumó la cantidad al stock actual.")
       } else {
         const {
           producto: nuevoProducto,
@@ -1361,8 +1364,8 @@ function App() {
       return
     }
 
-    if (["Deterioro", "Cambio de talla", "PÃ©rdida"].includes(entrega.motivo) && entrega.observacion.trim().length < 8) {
-      mostrarMensaje("Para deterioro, cambio de talla o pÃ©rdida debes escribir una observación clara.", "error")
+    if (["Deterioro", "Cambio de talla", "Pérdida"].includes(entrega.motivo) && entrega.observacion.trim().length < 8) {
+      mostrarMensaje("Para deterioro, cambio de talla o pérdida debes escribir una observación clara.", "error")
       return
     }
 
@@ -1451,7 +1454,7 @@ function App() {
       0
     )
     const confirmar = window.confirm(
-      `Vas a anular todo el comprobante ${entregaSeleccionada.numeroComprobante || entregaSeleccionada.id}. Se devolverán ${totalDevuelto} Ítems al stock y quedarÃ¡ registro en movimientos. Â¿Continuar?`
+      `Vas a anular todo el comprobante ${entregaSeleccionada.numeroComprobante || entregaSeleccionada.id}. Se devolverán ${totalDevuelto} ítems al stock y quedará registro en movimientos. ¿Continuar?`
     )
 
     if (!confirmar) {
@@ -1512,7 +1515,7 @@ function App() {
     })
 
     if (!comprobanteAbierto) {
-      mostrarMensaje("El navegador bloqueÃ³ la ventana del comprobante. Permite ventanas emergentes para esta app.")
+      mostrarMensaje("El navegador bloqueó la ventana del comprobante. Permite ventanas emergentes para esta app.")
     }
   }
 
@@ -1668,7 +1671,7 @@ function App() {
           const centroPorNombre = centrosCostos.find(
             (centro) => normalizarTexto(centro.nombre) === normalizarTexto(nombreCentro)
           )
-          const identificacion = obtenerValor(fila, ["Identificación", "Identificacion", "CÃ©dula", "Cedula"])
+          const identificacion = obtenerValor(fila, ["Identificación", "Identificacion", "Cédula", "Cedula"])
           const nombreCompleto = obtenerValor(fila, ["Nombre completo", "Nombre"])
 
           if (!identificacion || !nombreCompleto) {
@@ -1695,7 +1698,7 @@ function App() {
         .filter(Boolean)
 
       if (colaboradoresImportados.length === 0) {
-        mostrarMensaje("No encontró colaboradores vÃ¡lidos. Revisa que existan columnas de identificación y nombre.")
+        mostrarMensaje("No encontró colaboradores válidos. Revisa que existan columnas de identificación y nombre.")
         evento.target.value = ""
         return
       }
@@ -1748,7 +1751,7 @@ function App() {
     <main style={appShell}>
       <aside style={sidebar}>
         <img
-          src="/logo-msl-blanco.png"
+          src={assetUrl("logo-msl-blanco.png")}
           alt="MSL Group"
           style={sidebarLogo}
         />
@@ -1872,7 +1875,7 @@ function App() {
                 </section>
 
                 <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>MÃ¡s entregados este mes</h3>
+                  <h3 style={{ marginTop: 0 }}>Más entregados este mes</h3>
                   <table style={tabla}>
                     <thead>
                       <tr style={encabezadoTabla}>
@@ -1903,7 +1906,7 @@ function App() {
                     <thead>
                       <tr style={encabezadoTabla}>
                         <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>Itéms</th>
+                        <th style={celdaTabla}>Ítems</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2010,7 +2013,7 @@ function App() {
 
               <div style={dashboardGrid}>
                 <div style={tarjetaIndicador("#0100FE")}>
-                  <strong>Itéms entregados</strong>
+                  <strong>Ítems entregados</strong>
                   <h2>{totalEntregadoReporte}</h2>
                 </div>
                 <div style={tarjetaIndicador("#77A9FF")}>
@@ -2062,8 +2065,8 @@ function App() {
                     <thead>
                       <tr style={encabezadoTabla}>
                         <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>CÃ³digo</th>
-                        <th style={celdaTabla}>Itéms</th>
+                        <th style={celdaTabla}>Código</th>
+                        <th style={celdaTabla}>Ítems</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2085,13 +2088,13 @@ function App() {
                 </section>
 
                 <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Colaboradores con mÃ¡s entregas</h3>
+                  <h3 style={{ marginTop: 0 }}>Colaboradores con más entregas</h3>
                   <table style={tabla}>
                     <thead>
                       <tr style={encabezadoTabla}>
                         <th style={celdaTabla}>Colaborador</th>
                         <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>Itéms</th>
+                        <th style={celdaTabla}>Ítems</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2410,7 +2413,7 @@ function App() {
             <tbody>
               {productosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={celdaTabla}>No hay productos que coincidan con la bÃºsqueda.</td>
+                  <td colSpan="8" style={celdaTabla}>No hay productos que coincidan con la búsqueda.</td>
                 </tr>
               ) : (
               productosFiltrados.map((producto) => (
@@ -2751,7 +2754,7 @@ function App() {
             <tbody>
               {colaboradoresFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={celdaTabla}>No hay colaboradores que coincidan con la bÃºsqueda.</td>
+                  <td colSpan="9" style={celdaTabla}>No hay colaboradores que coincidan con la búsqueda.</td>
                 </tr>
               ) : (
               colaboradoresFiltrados.map((item) => (
@@ -2881,9 +2884,9 @@ function App() {
                 <option>Ingreso</option>
                 <option>Reposición</option>
                 <option>Deterioro</option>
-                <option>Dotación periÃ³dica</option>
+                <option>Dotación periódica</option>
                 <option>Cambio de talla</option>
-                <option>PÃ©rdida</option>
+                <option>Pérdida</option>
               </select>
             </Campo>
 

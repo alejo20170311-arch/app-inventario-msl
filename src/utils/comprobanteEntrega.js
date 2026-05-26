@@ -1,6 +1,7 @@
 import { valorSeguro } from "./inventario"
 
 export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
+  const logoUrl = new URL(`${import.meta.env.BASE_URL}logo-msl-Azul.jpg`, window.location.origin).href
   const entregasComprobante = entregaSeleccionada.comprobanteId
     ? entregas.filter((item) => item.comprobanteId === entregaSeleccionada.comprobanteId)
     : [entregaSeleccionada]
@@ -225,7 +226,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
         <main class="pagina">
           <header class="encabezado-calidad">
             <div class="logo-formato">
-              <img src="/logo-msl-Azul.jpg" alt="MSL Group" />
+              <img src="${logoUrl}" alt="MSL Group" />
             </div>
             <div class="titulo-formato">
               <div>ACTA DE ENTREGA</div>

@@ -9,7 +9,7 @@ export function obtenerStockMinimo(productoCatalogo) {
   if (productoCatalogo.nombre.includes("Tapabocas quirurgico")) return 5
   if (productoCatalogo.nombre.includes("Guantes de nitrilo")) return 5
   if (["Casco", "Proteccion visual", "Proteccion facial", "Trabajo en alturas"].includes(productoCatalogo.tipo)) return 2
-  if (productoCatalogo.categoria === "Dotacion") return 2
+  if (productoCatalogo.categoria === "Dotación") return 2
 
   return 2
 }
