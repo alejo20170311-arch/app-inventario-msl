@@ -49,10 +49,29 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             background: #FFFFFF;
           }
           .pagina {
+            position: relative;
             width: 216mm;
             min-height: 279mm;
             padding: 22mm;
             margin: 0 auto;
+          }
+          .marca-estado {
+            position: absolute;
+            top: 122mm;
+            left: 25mm;
+            right: 25mm;
+            text-align: center;
+            color: ${estadoComprobante === "Activa" ? "rgba(5, 0, 255, 0.05)" : "rgba(185, 28, 28, 0.10)"};
+            font-size: 64px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            transform: rotate(-18deg);
+            z-index: 0;
+            pointer-events: none;
+          }
+          .pagina > *:not(.marca-estado) {
+            position: relative;
+            z-index: 1;
           }
           .encabezado-calidad {
             display: grid;
@@ -101,7 +120,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           }
           .datos-acta {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             border: 1px solid #D8DEE6;
             margin-bottom: 22px;
           }
@@ -174,6 +193,15 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             color: #6B7280;
             text-decoration: line-through;
           }
+          .estado-acta {
+            display: inline-block;
+            padding: 5px 9px;
+            border-radius: 999px;
+            background: ${estadoComprobante === "Activa" ? "#ECFDF5" : "#FEF2F2"};
+            color: ${estadoComprobante === "Activa" ? "#064E3B" : "#7F1D1D"};
+            border: 1px solid ${estadoComprobante === "Activa" ? "#008A4C" : "#B91C1C"};
+            font-weight: bold;
+          }
           .firmas {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -198,6 +226,12 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           }
           .texto-legal p:last-child {
             margin-bottom: 0;
+          }
+          .nota-sistema {
+            margin-top: 22px;
+            font-size: 11px;
+            color: #4B5563;
+            text-align: center;
           }
           .acciones {
             position: fixed;
@@ -224,33 +258,35 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           <button onclick="window.print()">Imprimir / Guardar PDF</button>
         </div>
         <main class="pagina">
+          <div class="marca-estado">${valorSeguro(estadoComprobante).toUpperCase()}</div>
           <header class="encabezado-calidad">
             <div class="logo-formato">
               <img src="${logoUrl}" alt="MSL Group" />
             </div>
             <div class="titulo-formato">
               <div>ACTA DE ENTREGA</div>
-              <div>DOTACIoN Y EPPS</div>
+              <div>DOTACIÓN Y EPP</div>
             </div>
             <div class="datos-formato">
-              <div class="fila-formato">Codigo: F-GH-11</div>
-              <div class="fila-formato">Version: 07</div>
+              <div class="fila-formato">Código: F-GH-11</div>
+              <div class="fila-formato">Versión: 07</div>
               <div class="fila-formato">Fecha: 05 ene 2026</div>
             </div>
           </header>
 
           <section class="datos-acta">
             <div class="dato-acta"><span class="label">Fecha entrega</span>${valorSeguro(entregaSeleccionada.fecha)}</div>
-            <div class="dato-acta"><span class="label">Estado</span>${valorSeguro(estadoComprobante)}</div>
+            <div class="dato-acta"><span class="label">Estado</span><span class="estado-acta">${valorSeguro(estadoComprobante)}</span></div>
             <div class="dato-acta"><span class="label">Comprobante</span>${valorSeguro(entregaSeleccionada.numeroComprobante || entregaSeleccionada.id)}</div>
-            <div class="dato-acta"><span class="label">Lineas</span>${valorSeguro(entregasComprobante.length)}</div>
+            <div class="dato-acta"><span class="label">Líneas</span>${valorSeguro(entregasComprobante.length)}</div>
+            <div class="dato-acta"><span class="label">Total ítems</span>${valorSeguro(totalItemsComprobante)}</div>
           </section>
 
           <section class="bloque">
             <div class="titulo-bloque">Datos del colaborador</div>
             <div class="grid">
               <div class="campo"><span class="label">Nombre</span><span class="valor">${valorSeguro(entregaSeleccionada.colaborador)}</span></div>
-              <div class="campo"><span class="label">Identificacion</span><span class="valor">${valorSeguro(entregaSeleccionada.identificacion)}</span></div>
+              <div class="campo"><span class="label">Identificación</span><span class="valor">${valorSeguro(entregaSeleccionada.identificacion)}</span></div>
               <div class="campo"><span class="label">Grupo</span><span class="valor">${valorSeguro(entregaSeleccionada.grupo)}</span></div>
               <div class="campo"><span class="label">Centro de costos</span><span class="valor">${valorSeguro(entregaSeleccionada.centroCostos)}</span></div>
               <div class="campo"><span class="label">Nombre centro de costos</span><span class="valor">${valorSeguro(entregaSeleccionada.nombreCentroCostos)}</span></div>
@@ -276,18 +312,18 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
               </tbody>
             </table>
             <div class="observacion">
-              <span class="label">Observacion</span>
+              <span class="label">Observación</span>
               ${valorSeguro(entregaSeleccionada.observacion)}
               <br /><br />
-              <span class="label">Total items</span>
+              <span class="label">Total ítems</span>
               ${valorSeguro(totalItemsComprobante)}
             </div>
           </section>
 
           <section class="texto-legal">
-            <p>La dotacion que aqui se entrega es y sera de la empresa en todo momento, en caso de terminacion del contrato de trabajo o entrega de nueva dotacion, me comprometo a hacer la devolucion de forma inmediata.</p>
-            <p>En caso de daño de la dotacion o parte de ella, el trabajador debe devolverla a la empresa.</p>
-            <p>Autorizo expresamente a la empresa mediante este documento a descontar de salarios y liquidacion de prestaciones los valores de la dotacion cuando en cualquiera de los casos anteriores no la devuelve al empleador.</p>
+            <p>La dotación que aquí se entrega es y será de la empresa en todo momento. En caso de terminación del contrato de trabajo o entrega de nueva dotación, me comprometo a hacer la devolución de forma inmediata.</p>
+            <p>En caso de daño de la dotación o parte de ella, el trabajador debe devolverla a la empresa.</p>
+            <p>Autorizo expresamente a la empresa mediante este documento a descontar de salarios y liquidación de prestaciones los valores de la dotación cuando en cualquiera de los casos anteriores no la devuelva al empleador.</p>
           </section>
 
           <section class="firmas">
@@ -301,6 +337,10 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
               ${valorSeguro(entregaSeleccionada.responsable)}
             </div>
           </section>
+
+          <p class="nota-sistema">
+            Documento generado desde el sistema de inventario de dotación y EPP de MSL Group.
+          </p>
         </main>
       </body>
     </html>

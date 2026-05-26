@@ -135,10 +135,13 @@ function App() {
   const [busquedaMovimientos, setBusquedaMovimientos] = useState("")
   const [busquedaColaboradores, setBusquedaColaboradores] = useState("")
   const [busquedaEntregas, setBusquedaEntregas] = useState("")
+  const [busquedaReportes, setBusquedaReportes] = useState("")
+  const [busquedaPerfiles, setBusquedaPerfiles] = useState("")
   const [filtroProductos, setFiltroProductos] = useState("Todos")
   const [filtroMovimientos, setFiltroMovimientos] = useState("Todos")
   const [filtroColaboradores, setFiltroColaboradores] = useState("Todos")
   const [filtroEntregas, setFiltroEntregas] = useState("Todas")
+  const [filtroPerfiles, setFiltroPerfiles] = useState("Todos")
   const [mesActual] = useState(() => mesLocalISO())
   const [filtrosReporte, setFiltrosReporte] = useState(() => {
     const hoy = fechaLocalISO()
@@ -149,10 +152,20 @@ function App() {
       hasta: hoy,
       centroCostos: "Todos",
       categoria: "Todas",
+      estado: "Activas",
     }
   })
   const [colaboradorHistorialId, setColaboradorHistorialId] = useState("")
   const [colaboradores, setColaboradores] = useState([])
+  const [perfiles, setPerfiles] = useState([])
+  const [perfilEditandoId, setPerfilEditandoId] = useState(null)
+  const [perfilFormulario, setPerfilFormulario] = useState({
+    id: "",
+    nombre: "",
+    correo: "",
+    rol: "Consulta",
+    estado: "Activo",
+  })
 
   const cargarPerfil = useCallback(async (usuarioId) => {
     const { data, error } = await supabase
@@ -253,6 +266,19 @@ function App() {
         setMovimientos(datos.movimientos)
         setEntregas(datos.entregas)
         setColaboradores(datos.colaboradores)
+
+        if (perfil.rol === "Administrador") {
+          const { data: perfilesData, error: perfilesError } = await supabase
+            .from("perfiles")
+            .select("id, nombre, correo, rol, estado, creado_en")
+            .order("nombre")
+
+          if (perfilesError) throw perfilesError
+
+          setPerfiles(perfilesData || [])
+        } else {
+          setPerfiles([])
+        }
       } catch (error) {
         if (activo) {
           setMensaje({
@@ -474,7 +500,15 @@ function App() {
 
     return (item.categoria || producto?.categoria) === "EPP"
   }).length
-  const entregasReporte = entregasActivas.filter((item) => {
+  const entregasBaseReporte = entregas.filter((item) => {
+    const estado = item.estado || "Activa"
+
+    if (filtrosReporte.estado === "Activas") return estado === "Activa"
+    if (filtrosReporte.estado === "Anuladas") return estado === "Anulada"
+
+    return true
+  })
+  const entregasReporte = entregasBaseReporte.filter((item) => {
     const fecha = String(item.fecha || "")
     const coincideDesde = !filtrosReporte.desde || fecha >= filtrosReporte.desde
     const coincideHasta = !filtrosReporte.hasta || fecha <= filtrosReporte.hasta
@@ -483,8 +517,21 @@ function App() {
     const categoriaEntrega = item.categoria || productosPorId.get(String(item.productoId))?.categoria || ""
     const coincideCategoria = filtrosReporte.categoria === "Todas" ||
       categoriaEntrega === filtrosReporte.categoria
+    const coincideTexto = coincideBusqueda(item, busquedaReportes, [
+      "numeroComprobante",
+      "colaborador",
+      "identificacion",
+      "grupo",
+      "centroCostos",
+      "nombreCentroCostos",
+      "producto",
+      "variante",
+      "motivo",
+      "responsable",
+      "estado",
+    ])
 
-    return coincideDesde && coincideHasta && coincideCentro && coincideCategoria
+    return coincideDesde && coincideHasta && coincideCentro && coincideCategoria && coincideTexto
   })
   const totalEntregadoReporte = entregasReporte.reduce(
     (total, item) => total + Number(item.cantidad || 0),
@@ -535,6 +582,27 @@ function App() {
       return acumulado
     }, {})
   ).sort((a, b) => b.cantidad - a.cantidad)
+  const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
+  const esAdministrador = perfil?.rol === "Administrador"
+  const puedeGestionarProductos = ["Administrador", "Bodega"].includes(perfil?.rol)
+  const puedeGestionarMovimientos = ["Administrador", "Bodega"].includes(perfil?.rol)
+  const puedeGestionarColaboradores = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
+  const puedeGestionarEntregas = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
+  const perfilesFiltrados = perfiles.filter((item) => {
+    const coincideFiltro = filtroPerfiles === "Todos" ||
+      item.rol === filtroPerfiles ||
+      item.estado === filtroPerfiles
+
+    return coincideFiltro &&
+      coincideBusqueda(item, busquedaPerfiles, ["nombre", "correo", "rol", "estado"])
+  })
+  const productosStockCritico = productosStockBajo.filter(
+    (producto) => Number(producto.stockActual) <= Math.max(1, Number(producto.stockMinimo) / 2)
+  )
+  const colaboradoresActivos = colaboradores.filter((item) => item.estado === "Activo")
+  const entregasAnuladasMes = entregas.filter(
+    (item) => item.estado === "Anulada" && String(item.fecha || "").slice(0, 7) === mesActual
+  )
   const pestanas = [
     { id: "panel", texto: "Panel", icono: Home },
     { id: "productos", texto: "Productos", icono: Package },
@@ -542,10 +610,11 @@ function App() {
     { id: "colaboradores", texto: "Colaboradores", icono: Users },
     { id: "entregas", texto: "Entregas", icono: ClipboardCheck },
     { id: "reportes", texto: "Reportes", icono: BarChart3 },
-  ]
+    { id: "usuarios", texto: "Usuarios", icono: UserRound, soloAdmin: true },
+  ].filter((item) => !item.soloAdmin || esAdministrador)
   const indicadoresPrincipales = [
     { texto: "Productos", valor: productos.length, icono: Package, color: "#0500ff" },
-    { texto: "Colaboradores", valor: colaboradores.length, icono: Users, color: "#5b8dff" },
+    { texto: "Colaboradores activos", valor: colaboradoresActivos.length, icono: Users, color: "#5b8dff" },
     { texto: "Entregas", valor: entregas.length, icono: ClipboardCheck, color: "#5b8dff" },
     { texto: "Stock bajo", valor: productosStockBajo.length, icono: Boxes, color: "#0500ff" },
   ]
@@ -554,6 +623,8 @@ function App() {
     { texto: "Ítems entregados este mes", valor: totalEntregadoMes, icono: Boxes, color: "#5b8dff" },
     { texto: "Dotación este mes", valor: dotacionEntregadaMes, icono: Package, color: "#0500ff" },
     { texto: "EPP este mes", valor: eppEntregadoMes, icono: ShieldAlert, color: "#050505" },
+    { texto: "Stock crítico", valor: productosStockCritico.length, icono: ShieldAlert, color: "#b91c1c" },
+    { texto: "Anuladas este mes", valor: entregasAnuladasMes.length, icono: ClipboardCheck, color: "#050505" },
   ]
   const renderIndicador = ({ texto, valor, icono: Icono, color }) => (
     <div key={texto} style={tarjetaIndicador(color)}>
@@ -575,6 +646,111 @@ function App() {
 
   function mostrarErrorSupabase(error, accion = "guardar la información") {
     mostrarMensaje(`No se pudo ${accion}: ${error.message}`, "error")
+  }
+
+  function requierePermiso(condicion, mensajePermiso) {
+    if (condicion) return true
+
+    mostrarMensaje(mensajePermiso, "error")
+    return false
+  }
+
+  function actualizarPerfilFormulario(campo, valor) {
+    setPerfilFormulario({
+      ...perfilFormulario,
+      [campo]: campo === "correo" ? valor.trim().toLowerCase() : valor,
+    })
+  }
+
+  function prepararEdicionPerfil(item) {
+    setPerfilEditandoId(item.id)
+    setPerfilFormulario({
+      id: item.id,
+      nombre: item.nombre,
+      correo: item.correo,
+      rol: item.rol,
+      estado: item.estado,
+    })
+  }
+
+  function cancelarEdicionPerfil() {
+    setPerfilEditandoId(null)
+    setPerfilFormulario({
+      id: "",
+      nombre: "",
+      correo: "",
+      rol: "Consulta",
+      estado: "Activo",
+    })
+  }
+
+  async function guardarPerfilUsuario(evento) {
+    evento.preventDefault()
+
+    if (!requierePermiso(esAdministrador, "Solo un administrador puede gestionar usuarios.")) return
+
+    const payload = {
+      id: perfilFormulario.id.trim(),
+      nombre: perfilFormulario.nombre.trim(),
+      correo: perfilFormulario.correo.trim().toLowerCase(),
+      rol: perfilFormulario.rol,
+      estado: perfilFormulario.estado,
+    }
+
+    if (!payload.id || !payload.nombre || !payload.correo) {
+      mostrarMensaje("Completa el ID de Supabase Auth, nombre y correo.", "error")
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("perfiles")
+        .upsert(payload, { onConflict: "id" })
+        .select("id, nombre, correo, rol, estado, creado_en")
+        .single()
+
+      if (error) throw error
+
+      setPerfiles((actuales) => {
+        const existe = actuales.some((item) => item.id === data.id)
+        const lista = existe
+          ? actuales.map((item) => item.id === data.id ? data : item)
+          : [...actuales, data]
+
+        return lista.sort((a, b) => a.nombre.localeCompare(b.nombre))
+      })
+      cancelarEdicionPerfil()
+      mostrarMensaje("Perfil guardado correctamente.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "guardar el perfil")
+    }
+  }
+
+  async function cambiarEstadoPerfil(item) {
+    if (!requierePermiso(esAdministrador, "Solo un administrador puede cambiar usuarios.")) return
+
+    if (item.id === sesion?.user?.id && item.estado === "Activo") {
+      mostrarMensaje("No puedes inactivar tu propio usuario desde esta pantalla.", "error")
+      return
+    }
+
+    const nuevoEstado = item.estado === "Activo" ? "Inactivo" : "Activo"
+
+    try {
+      const { data, error } = await supabase
+        .from("perfiles")
+        .update({ estado: nuevoEstado })
+        .eq("id", item.id)
+        .select("id, nombre, correo, rol, estado, creado_en")
+        .single()
+
+      if (error) throw error
+
+      setPerfiles(perfiles.map((perfilItem) => perfilItem.id === item.id ? data : perfilItem))
+      mostrarMensaje(`Usuario ${nuevoEstado.toLowerCase()} correctamente.`, "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "actualizar el estado del perfil")
+    }
   }
 
   function actualizarCredenciales(campo, valor) {
@@ -616,6 +792,7 @@ function App() {
     setMovimientos([])
     setEntregas([])
     setColaboradores([])
+    setPerfiles([])
     setPestanaActiva("panel")
     mostrarMensaje("Sesión cerrada correctamente.", "exito")
   }
@@ -702,6 +879,7 @@ function App() {
 
   async function registrarItemCatalogo(evento) {
     evento.preventDefault()
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite modificar el catálogo.")) return
 
     const variantes = itemCatalogo.variantes
       .split(",")
@@ -923,6 +1101,8 @@ function App() {
   }
 
   async function eliminarProducto(idProducto) {
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite eliminar o inactivar productos.")) return
+
     const productoTieneMovimientos = movimientos.some(
       (item) => item.productoId === idProducto
     )
@@ -1008,6 +1188,8 @@ function App() {
   }
 
   async function eliminarColaborador(idColaborador) {
+    if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite eliminar o retirar colaboradores.")) return
+
     const colaboradorTieneEntregas = entregas.some(
       (item) => item.colaboradorId === idColaborador
     )
@@ -1059,6 +1241,8 @@ function App() {
 
   async function registrarProducto(evento) {
     evento.preventDefault()
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite registrar o editar productos.")) return
+
     const cantidadEntrada = Number(formulario.stockActual)
     const motivoEntrada = formulario.motivoEntrada || "Compra"
     const observacionEntrada = formulario.observacionEntrada
@@ -1201,6 +1385,7 @@ function App() {
 
   async function registrarMovimiento(evento) {
     evento.preventDefault()
+    if (!requierePermiso(puedeGestionarMovimientos, "Tu rol no permite registrar movimientos de inventario.")) return
 
     if (!productoMovimiento) {
       mostrarMensaje("Selecciona un producto para registrar el movimiento.")
@@ -1277,6 +1462,7 @@ function App() {
 
   async function registrarColaborador(evento) {
     evento.preventDefault()
+    if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite registrar o editar colaboradores.")) return
 
     const colaboradorExistente = colaboradores.find(
       (item) =>
@@ -1343,6 +1529,7 @@ function App() {
 
   async function registrarEntrega(evento) {
     evento.preventDefault()
+    if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite registrar entregas.")) return
 
     if (!colaboradorEntrega) {
       mostrarMensaje("Selecciona colaborador para registrar la entrega.")
@@ -1424,6 +1611,8 @@ function App() {
   }
 
   async function anularEntrega(entregaId) {
+    if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite anular comprobantes.")) return
+
     const entregaSeleccionada = entregas.find((item) => item.id === entregaId)
 
     if (!entregaSeleccionada || entregaSeleccionada.estado === "Anulada") {
@@ -1523,7 +1712,7 @@ function App() {
   function exportarProductos() {
     exportarCsv("productos-msl.csv", [
       { titulo: "Producto", campo: "nombre" },
-      { titulo: "categoría", campo: "categoria" },
+      { titulo: "Categoría", campo: "categoria" },
       { titulo: "Tipo", campo: "tipo" },
       { titulo: "Variante", campo: "variante" },
       { titulo: "Unidad", campo: "unidad" },
@@ -1597,7 +1786,7 @@ function App() {
       { titulo: "Centro de costos", campo: "centroCostos" },
       { titulo: "Nombre centro de costos", campo: "nombreCentroCostos" },
       { titulo: "Producto", campo: "producto" },
-      { titulo: "categoría", campo: "categoria" },
+      { titulo: "Categoría", campo: "categoria" },
       { titulo: "Variante", campo: "variante" },
       { titulo: "Unidad", campo: "unidad" },
       { titulo: "Cantidad", campo: "cantidad" },
@@ -1610,7 +1799,7 @@ function App() {
     exportarCsv("reporte-consumo-productos-msl.csv", [
       { titulo: "Producto", campo: "producto" },
       { titulo: "Variante", campo: "variante" },
-      { titulo: "categoría", campo: "categoria" },
+      { titulo: "Categoría", campo: "categoria" },
       { titulo: "Unidad", campo: "unidad" },
       { titulo: "Cantidad", campo: "cantidad" },
     ], productosReporte)
@@ -1627,7 +1816,7 @@ function App() {
   function exportarReporteStockBajo() {
     exportarCsv("reporte-stock-bajo-msl.csv", [
       { titulo: "Producto", campo: "nombre" },
-      { titulo: "categoría", campo: "categoria" },
+      { titulo: "Categoría", campo: "categoria" },
       { titulo: "Tipo", campo: "tipo" },
       { titulo: "Variante", campo: "variante" },
       { titulo: "Unidad", campo: "unidad" },
@@ -1638,8 +1827,23 @@ function App() {
     ], productosStockBajo)
   }
 
+  function exportarPerfiles() {
+    exportarCsv("usuarios-msl.csv", [
+      { titulo: "Nombre", campo: "nombre" },
+      { titulo: "Correo", campo: "correo" },
+      { titulo: "Rol", campo: "rol" },
+      { titulo: "Estado", campo: "estado" },
+      { titulo: "Creado en", campo: "creado_en" },
+    ], perfiles)
+  }
+
 
   function importarColaboradores(evento) {
+    if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite importar colaboradores.")) {
+      evento.target.value = ""
+      return
+    }
+
     const archivo = evento.target.files?.[0]
 
     if (!archivo) return
@@ -2001,12 +2205,29 @@ function App() {
                     </select>
                   </Campo>
 
-                  <Campo texto="categoría">
+                  <Campo texto="Categoría">
                     <select value={filtrosReporte.categoria} onChange={(e) => actualizarFiltroReporte("categoria", e.target.value)} style={campoFormulario}>
                       <option>Todas</option>
                       <option>Dotación</option>
                       <option>EPP</option>
                     </select>
+                  </Campo>
+
+                  <Campo texto="Estado">
+                    <select value={filtrosReporte.estado} onChange={(e) => actualizarFiltroReporte("estado", e.target.value)} style={campoFormulario}>
+                      <option>Todas</option>
+                      <option>Activas</option>
+                      <option>Anuladas</option>
+                    </select>
+                  </Campo>
+
+                  <Campo texto="Buscar">
+                    <input
+                      value={busquedaReportes}
+                      onChange={(e) => setBusquedaReportes(e.target.value)}
+                      placeholder="Colaborador, producto, comprobante, grupo o responsable"
+                      style={campoFormulario}
+                    />
                   </Campo>
                 </form>
               </section>
@@ -2037,7 +2258,7 @@ function App() {
                     <thead>
                       <tr style={encabezadoTabla}>
                         <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>categoría</th>
+                        <th style={celdaTabla}>Categoría</th>
                         <th style={celdaTabla}>Cantidad</th>
                       </tr>
                     </thead>
@@ -2146,26 +2367,147 @@ function App() {
             </>
           )}
 
+          {pestanaActiva === "usuarios" && esAdministrador && (
+            <>
+              <div style={accionesModulo}>
+                <button type="button" onClick={exportarPerfiles} style={botonSecundario}>
+                  <Download size={18} />
+                  Exportar usuarios
+                </button>
+              </div>
+
+              <h2 style={{ marginTop: "34px" }}>
+                {perfilEditandoId ? "Editar perfil de usuario" : "Registrar perfil de usuario"}
+              </h2>
+
+              <p style={ayudaFormulario}>
+                Primero invita o crea el usuario en Supabase Auth. Luego pega aquí su User UID para asignarle rol y estado dentro de la app.
+              </p>
+
+              <form onSubmit={guardarPerfilUsuario} style={gridFormulario}>
+                <Campo texto="User UID de Supabase">
+                  <input
+                    value={perfilFormulario.id}
+                    onChange={(e) => actualizarPerfilFormulario("id", e.target.value)}
+                    readOnly={Boolean(perfilEditandoId)}
+                    required
+                    style={perfilEditandoId ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Nombre">
+                  <input value={perfilFormulario.nombre} onChange={(e) => actualizarPerfilFormulario("nombre", e.target.value)} required style={campoFormulario} />
+                </Campo>
+
+                <Campo texto="Correo">
+                  <input type="email" value={perfilFormulario.correo} onChange={(e) => actualizarPerfilFormulario("correo", e.target.value)} required style={campoFormulario} />
+                </Campo>
+
+                <Campo texto="Rol">
+                  <select value={perfilFormulario.rol} onChange={(e) => actualizarPerfilFormulario("rol", e.target.value)} style={campoFormulario}>
+                    {rolesDisponibles.map((rol) => (
+                      <option key={rol}>{rol}</option>
+                    ))}
+                  </select>
+                </Campo>
+
+                <Campo texto="Estado">
+                  <select value={perfilFormulario.estado} onChange={(e) => actualizarPerfilFormulario("estado", e.target.value)} style={campoFormulario}>
+                    <option>Activo</option>
+                    <option>Inactivo</option>
+                  </select>
+                </Campo>
+
+                <div style={filaBotones}>
+                  <button style={botonPrincipal}>
+                    <Users size={18} />
+                    {perfilEditandoId ? "Guardar perfil" : "Registrar perfil"}
+                  </button>
+                  {perfilEditandoId && (
+                    <button type="button" onClick={cancelarEdicionPerfil} style={botonSecundario}>
+                      Cancelar edición
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <h2 style={{ marginTop: "34px" }}>Usuarios de la app</h2>
+
+              <input
+                value={busquedaPerfiles}
+                onChange={(e) => setBusquedaPerfiles(e.target.value)}
+                placeholder="Buscar usuario por nombre, correo, rol o estado"
+                style={campoBusqueda}
+              />
+
+              <div style={grupoFiltros}>
+                {["Todos", "Activo", "Inactivo", ...rolesDisponibles].map((filtro) => (
+                  <button key={filtro} onClick={() => setFiltroPerfiles(filtro)} style={botonFiltro(filtroPerfiles === filtro)}>
+                    {filtro}
+                  </button>
+                ))}
+              </div>
+
+              <table style={tabla}>
+                <thead>
+                  <tr style={encabezadoTabla}>
+                    <th style={celdaTabla}>Nombre</th>
+                    <th style={celdaTabla}>Correo</th>
+                    <th style={celdaTabla}>Rol</th>
+                    <th style={celdaTabla}>Estado</th>
+                    <th style={celdaTabla}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perfilesFiltrados.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={celdaTabla}>No hay usuarios que coincidan con la búsqueda.</td>
+                    </tr>
+                  ) : (
+                    perfilesFiltrados.map((item) => (
+                      <tr key={item.id}>
+                        <td style={celdaTabla}>{item.nombre}</td>
+                        <td style={celdaTabla}>{item.correo}</td>
+                        <td style={celdaTabla}>{item.rol}</td>
+                        <td style={celdaTabla}>{item.estado}</td>
+                        <td style={celdaTabla}>
+                          <button type="button" onClick={() => prepararEdicionPerfil(item)} style={botonEditar}>
+                            Editar
+                          </button>
+                          <button type="button" onClick={() => cambiarEstadoPerfil(item)} style={botonEliminar}>
+                            {item.estado === "Activo" ? "Inactivar" : "Activar"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </>
+          )}
+
           {pestanaActiva === "productos" && (
             <>
           <div style={accionesModulo}>
-            <button type="button" onClick={() => setMostrarFormularioItem(!mostrarFormularioItem)} style={botonSecundario}>
-              <Plus size={18} />
-              {mostrarFormularioItem ? "Cerrar item nuevo" : "Crear item nuevo"}
-            </button>
+            {puedeGestionarProductos && (
+              <button type="button" onClick={() => setMostrarFormularioItem(!mostrarFormularioItem)} style={botonSecundario}>
+                <Plus size={18} />
+                {mostrarFormularioItem ? "Cerrar item nuevo" : "Crear item nuevo"}
+              </button>
+            )}
             <button onClick={exportarProductos} style={botonSecundario}>
               <Download size={18} />
               Exportar productos
             </button>
           </div>
 
-          {mostrarFormularioItem && (
+          {puedeGestionarProductos && mostrarFormularioItem && (
             <section style={panelBloque}>
               <h2 style={{ marginTop: 0 }}>
                 {itemCatalogoEditandoClave ? "Editar item del catálogo" : "Crear item nuevo"}
               </h2>
               <form onSubmit={registrarItemCatalogo} style={gridFormulario}>
-                <Campo texto="categoría">
+                <Campo texto="Categoría">
                   <select value={itemCatalogo.categoria} onChange={(e) => actualizarItemCatalogo("categoria", e.target.value)} style={campoFormulario}>
                     <option>Dotación</option>
                     <option>EPP</option>
@@ -2220,7 +2562,7 @@ function App() {
                 <thead>
                   <tr style={encabezadoTabla}>
                     <th style={celdaTabla}>Item</th>
-                    <th style={celdaTabla}>categoría</th>
+                    <th style={celdaTabla}>Categoría</th>
                     <th style={celdaTabla}>Tipo</th>
                     <th style={celdaTabla}>Unidad</th>
                     <th style={celdaTabla}>Variantes</th>
@@ -2253,6 +2595,8 @@ function App() {
             </section>
           )}
 
+          {puedeGestionarProductos ? (
+            <>
           <h2 style={{ marginTop: "34px" }}>
             {productoEditandoId ? "Editar producto" : "Registrar producto"}
           </h2>
@@ -2264,7 +2608,7 @@ function App() {
               </p>
             )}
 
-            <Campo texto="categoría">
+            <Campo texto="Categoría">
               <select value={formulario.categoria} onChange={(e) => actualizarCampo("categoria", e.target.value)} disabled={productoEditandoTieneHistorial} style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
                 <option>Dotación</option>
                 <option>EPP</option>
@@ -2379,6 +2723,12 @@ function App() {
               )}
             </div>
           </form>
+            </>
+          ) : (
+            <p style={ayudaFormulario}>
+              Tu rol es de consulta para productos. Puedes revisar y exportar información, pero no registrar, editar ni eliminar.
+            </p>
+          )}
 
           <h2 style={{ marginTop: "34px" }}>Productos registrados</h2>
 
@@ -2401,7 +2751,7 @@ function App() {
             <thead>
               <tr style={encabezadoTabla}>
                 <th style={celdaTabla}>Producto</th>
-                <th style={celdaTabla}>categoría</th>
+                <th style={celdaTabla}>Categoría</th>
                 <th style={celdaTabla}>Tipo</th>
                 <th style={celdaTabla}>Variante</th>
                 <th style={celdaTabla}>Stock</th>
@@ -2426,13 +2776,19 @@ function App() {
                   <td style={celdaTabla}>{producto.stockMinimo}</td>
                   <td style={celdaTabla}>{producto.estado}</td>
                   <td style={celdaTabla}>
-                    <button onClick={() => prepararEdicion(producto)} style={botonEditar}>
-                      Editar
-                    </button>
+                    {puedeGestionarProductos ? (
+                      <>
+                        <button onClick={() => prepararEdicion(producto)} style={botonEditar}>
+                          Editar
+                        </button>
 
-                    <button onClick={() => eliminarProducto(producto.id)} style={botonEliminar}>
-                      Eliminar
-                    </button>
+                        <button onClick={() => eliminarProducto(producto.id)} style={botonEliminar}>
+                          Eliminar
+                        </button>
+                      </>
+                    ) : (
+                      "Solo consulta"
+                    )}
                   </td>
                 </tr>
               ))
@@ -2451,6 +2807,8 @@ function App() {
             </button>
           </div>
 
+          {puedeGestionarMovimientos ? (
+            <>
           <h2 style={{ marginTop: "34px" }}>Registrar movimiento</h2>
 
           <form onSubmit={registrarMovimiento} style={gridFormulario}>
@@ -2491,6 +2849,12 @@ function App() {
               Registrar movimiento
             </button>
           </form>
+            </>
+          ) : (
+            <p style={ayudaFormulario}>
+              Tu rol puede consultar movimientos, pero no registrar entradas, devoluciones ni ajustes.
+            </p>
+          )}
 
           <h2 style={{ marginTop: "34px" }}>Movimientos recientes</h2>
 
@@ -2547,17 +2911,21 @@ function App() {
           {pestanaActiva === "colaboradores" && (
             <>
           <div style={accionesModulo}>
-            <label style={botonSecundario}>
-              <Plus size={18} />
-              Importar colaboradores
-              <input type="file" accept=".csv" onChange={importarColaboradores} style={{ display: "none" }} />
-            </label>
+            {puedeGestionarColaboradores && (
+              <label style={botonSecundario}>
+                <Plus size={18} />
+                Importar colaboradores
+                <input type="file" accept=".csv" onChange={importarColaboradores} style={{ display: "none" }} />
+              </label>
+            )}
             <button onClick={exportarColaboradores} style={botonSecundario}>
               <Download size={18} />
               Exportar colaboradores
             </button>
           </div>
 
+          {puedeGestionarColaboradores ? (
+            <>
           <h2 style={{ marginTop: "34px" }}>
             {colaboradorEditandoId ? "Editar colaborador" : "Registrar colaborador"}
           </h2>
@@ -2719,6 +3087,12 @@ function App() {
               )}
             </div>
           </form>
+            </>
+          ) : (
+            <p style={ayudaFormulario}>
+              Tu rol puede consultar colaboradores, pero no registrar, editar, importar ni retirar personas.
+            </p>
+          )}
 
           <h2 style={{ marginTop: "34px" }}>Colaboradores registrados</h2>
 
@@ -2770,13 +3144,19 @@ function App() {
                   </td>
                   <td style={celdaTabla}>{item.estado}</td>
                   <td style={celdaTabla}>
-                    <button onClick={() => prepararEdicionColaborador(item)} style={botonEditar}>
-                      Editar
-                    </button>
+                    {puedeGestionarColaboradores ? (
+                      <>
+                        <button onClick={() => prepararEdicionColaborador(item)} style={botonEditar}>
+                          Editar
+                        </button>
 
-                    <button onClick={() => eliminarColaborador(item.id)} style={botonEliminar}>
-                      Eliminar
-                    </button>
+                        <button onClick={() => eliminarColaborador(item.id)} style={botonEliminar}>
+                          Eliminar
+                        </button>
+                      </>
+                    ) : (
+                      "Solo consulta"
+                    )}
                   </td>
                 </tr>
               ))
@@ -2795,6 +3175,8 @@ function App() {
             </button>
           </div>
 
+          {puedeGestionarEntregas ? (
+            <>
           <h2 style={{ marginTop: "34px" }}>Registrar entrega</h2>
 
           <form onSubmit={registrarEntrega} style={gridFormulario}>
@@ -2871,7 +3253,7 @@ function App() {
                     ))}
                   </tbody>
                 </table>
-                <p style={{ margin: "10px 0 0" }}>Total de Ítems: {totalLineasEntrega}</p>
+                <p style={{ margin: "10px 0 0" }}>Total de ítems: {totalLineasEntrega}</p>
               </div>
             )}
 
@@ -2903,6 +3285,12 @@ function App() {
               Registrar entrega completa
             </button>
           </form>
+            </>
+          ) : (
+            <p style={ayudaFormulario}>
+              Tu rol puede consultar entregas y comprobantes, pero no registrar ni anular entregas.
+            </p>
+          )}
 
           <h2 style={{ marginTop: "34px" }}>Historial por colaborador</h2>
 
@@ -2957,7 +3345,7 @@ function App() {
                 <tbody>
                   {entregasColaborador.length === 0 ? (
                     <tr>
-                      <td colSpan="7" style={celdaTabla}>Este colaborador Todavía no tiene entregas registradas.</td>
+                      <td colSpan="7" style={celdaTabla}>Este colaborador todavía no tiene entregas registradas.</td>
                     </tr>
                   ) : (
                     entregasColaborador.map((item) => (
@@ -3035,7 +3423,7 @@ function App() {
                         Comprobante
                       </button>
 
-                      {(item.estado || "Activa") === "Activa" ? (
+                      {puedeGestionarEntregas && (item.estado || "Activa") === "Activa" ? (
                         <button onClick={() => anularEntrega(item.id)} style={botonEliminar}>
                           Anular comprobante
                         </button>
