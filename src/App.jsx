@@ -434,16 +434,78 @@ function App() {
     coincideFiltroEntrega(item, filtroEntregas) &&
     coincideBusqueda(item, busquedaEntregas, ["numeroComprobante", "fecha", "colaborador", "identificacion", "grupo", "centroCostos", "nombreCentroCostos", "producto", "variante", "unidad", "cantidad", "motivo", "responsable", "observacion", "estado", "motivoAnulacion"])
   )
+  const comprobantesFiltrados = Object.values(
+    entregasFiltradas.reduce((acumulado, item) => {
+      const clave = item.comprobanteId || item.id
+
+      acumulado[clave] = acumulado[clave] || {
+        id: clave,
+        numero: item.numeroComprobante || item.id,
+        fecha: item.fecha,
+        colaborador: item.colaborador,
+        centroCostos: item.centroCostos,
+        motivoAnulacion: item.motivoAnulacion,
+        lineas: [],
+        totalItems: 0,
+      }
+      acumulado[clave].lineas.push(item)
+      acumulado[clave].totalItems += Number(item.cantidad || 0)
+
+      return acumulado
+    }, {})
+  ).map((comprobante) => ({
+    ...comprobante,
+    estado: comprobante.lineas.every((linea) => linea.estado === "Anulada")
+      ? "Anulada"
+      : "Activa",
+    primeraLinea: comprobante.lineas[0],
+  }))
   const colaboradorHistorial = colaboradores.find(
     (item) => String(item.id) === colaboradorHistorialId
   )
   const entregasColaborador = colaboradorHistorial
     ? entregas.filter((item) => String(item.colaboradorId) === colaboradorHistorialId)
     : []
-  const entregasActivasColaborador = entregasColaborador.filter(
-    (item) => (item.estado || "Activa") === "Activa"
+  const comprobantesColaborador = Object.values(
+    entregasColaborador.reduce((acumulado, item) => {
+      const clave = item.comprobanteId || item.id
+
+      acumulado[clave] = acumulado[clave] || {
+        id: clave,
+        numero: item.numeroComprobante || item.id,
+        fecha: item.fecha,
+        motivo: item.motivo,
+        responsable: item.responsable,
+        lineas: [],
+        totalItems: 0,
+      }
+      acumulado[clave].lineas.push(item)
+      acumulado[clave].totalItems += Number(item.cantidad || 0)
+
+      return acumulado
+    }, {})
+  ).map((comprobante) => {
+    const productosResumen = comprobante.lineas
+      .slice(0, 3)
+      .map((linea) => `${linea.producto} - ${linea.variante}`)
+      .join(", ")
+    const productosRestantes = comprobante.lineas.length > 3
+      ? ` +${comprobante.lineas.length - 3} más`
+      : ""
+
+    return {
+      ...comprobante,
+      estado: comprobante.lineas.every((linea) => linea.estado === "Anulada")
+        ? "Anulada"
+        : "Activa",
+      productosResumen: `${productosResumen}${productosRestantes}`,
+      primeraLinea: comprobante.lineas[0],
+    }
+  })
+  const comprobantesActivosColaborador = comprobantesColaborador.filter(
+    (item) => item.estado === "Activa"
   )
-  const entregasAnuladasColaborador = entregasColaborador.filter(
+  const comprobantesAnuladosColaborador = comprobantesColaborador.filter(
     (item) => item.estado === "Anulada"
   )
   const entregasActivas = entregas.filter(
@@ -3317,15 +3379,15 @@ function App() {
                   </p>
                 </div>
                 <div>
-                  <strong>{entregasColaborador.length}</strong>
-                  <span>Total entregas</span>
+                  <strong>{comprobantesColaborador.length}</strong>
+                  <span>Total comprobantes</span>
                 </div>
                 <div>
-                  <strong>{entregasActivasColaborador.length}</strong>
+                  <strong>{comprobantesActivosColaborador.length}</strong>
                   <span>Activas</span>
                 </div>
                 <div>
-                  <strong>{entregasAnuladasColaborador.length}</strong>
+                  <strong>{comprobantesAnuladosColaborador.length}</strong>
                   <span>Anuladas</span>
                 </div>
               </div>
@@ -3334,29 +3396,37 @@ function App() {
                 <thead>
                   <tr style={encabezadoTabla}>
                     <th style={celdaTabla}>Fecha</th>
-                    <th style={celdaTabla}>Producto</th>
-                    <th style={celdaTabla}>Variante</th>
-                    <th style={celdaTabla}>Cantidad</th>
+                    <th style={celdaTabla}>Comprobante</th>
+                    <th style={celdaTabla}>Líneas</th>
+                    <th style={celdaTabla}>Total ítems</th>
+                    <th style={celdaTabla}>Productos</th>
                     <th style={celdaTabla}>Motivo</th>
                     <th style={celdaTabla}>Responsable</th>
                     <th style={celdaTabla}>Estado</th>
+                    <th style={celdaTabla}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {entregasColaborador.length === 0 ? (
+                  {comprobantesColaborador.length === 0 ? (
                     <tr>
-                      <td colSpan="7" style={celdaTabla}>Este colaborador todavía no tiene entregas registradas.</td>
+                      <td colSpan="9" style={celdaTabla}>Este colaborador todavía no tiene entregas registradas.</td>
                     </tr>
                   ) : (
-                    entregasColaborador.map((item) => (
-                      <tr key={item.id} style={item.estado === "Anulada" ? filaAnulada : undefined}>
-                        <td style={celdaTabla}>{item.fecha}</td>
-                        <td style={celdaTabla}>{item.producto}</td>
-                        <td style={celdaTabla}>{item.variante}</td>
-                        <td style={celdaTabla}>{item.cantidad} {item.unidad}</td>
-                        <td style={celdaTabla}>{item.motivo}</td>
-                        <td style={celdaTabla}>{item.responsable}</td>
-                        <td style={celdaTabla}>{item.estado || "Activa"}</td>
+                    comprobantesColaborador.map((comprobante) => (
+                      <tr key={comprobante.id} style={comprobante.estado === "Anulada" ? filaAnulada : undefined}>
+                        <td style={celdaTabla}>{comprobante.fecha}</td>
+                        <td style={celdaTabla}>{comprobante.numero}</td>
+                        <td style={celdaTabla}>{comprobante.lineas.length}</td>
+                        <td style={celdaTabla}>{comprobante.totalItems}</td>
+                        <td style={celdaTabla}>{comprobante.productosResumen}</td>
+                        <td style={celdaTabla}>{comprobante.motivo}</td>
+                        <td style={celdaTabla}>{comprobante.responsable}</td>
+                        <td style={celdaTabla}>{comprobante.estado}</td>
+                        <td style={celdaTabla}>
+                          <button type="button" onClick={() => abrirComprobante(comprobante.primeraLinea)} style={botonEditar}>
+                            Comprobante
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -3385,50 +3455,42 @@ function App() {
           <table style={tabla}>
             <thead>
               <tr style={encabezadoTabla}>
-                <th style={celdaTabla}>Fecha</th>
                 <th style={celdaTabla}>Comprobante</th>
+                <th style={celdaTabla}>Fecha</th>
                 <th style={celdaTabla}>Colaborador</th>
-                <th style={celdaTabla}>Producto</th>
-                <th style={celdaTabla}>Variante</th>
-                <th style={celdaTabla}>Cantidad</th>
-                <th style={celdaTabla}>Motivo</th>
-                <th style={celdaTabla}>Responsable</th>
                 <th style={celdaTabla}>Centro costos</th>
-                <th style={celdaTabla}>Stock final</th>
+                <th style={celdaTabla}>Líneas</th>
+                <th style={celdaTabla}>Total ítems</th>
                 <th style={celdaTabla}>Estado</th>
                 <th style={celdaTabla}>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {entregas.length === 0 ? (
+              {comprobantesFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan="12" style={celdaTabla}>Todavía no hay entregas registradas.</td>
+                  <td colSpan="8" style={celdaTabla}>No hay comprobantes que coincidan con la búsqueda.</td>
                 </tr>
               ) : (
-                entregasFiltradas.map((item) => (
-                  <tr key={item.id} style={item.estado === "Anulada" ? filaAnulada : undefined}>
-                    <td style={celdaTabla}>{item.fecha}</td>
-                    <td style={celdaTabla}>{item.numeroComprobante || item.id}</td>
-                    <td style={celdaTabla}>{item.colaborador}</td>
-                    <td style={celdaTabla}>{item.producto}</td>
-                    <td style={celdaTabla}>{item.variante}</td>
-                    <td style={celdaTabla}>{item.cantidad} {item.unidad}</td>
-                    <td style={celdaTabla}>{item.motivo}</td>
-                    <td style={celdaTabla}>{item.responsable}</td>
-                    <td style={celdaTabla}>{item.centroCostos}</td>
-                    <td style={celdaTabla}>{item.stockResultante} {item.unidad}</td>
-                    <td style={celdaTabla}>{item.estado || "Activa"}</td>
+                comprobantesFiltrados.map((comprobante) => (
+                  <tr key={comprobante.id} style={comprobante.estado === "Anulada" ? filaAnulada : undefined}>
+                    <td style={celdaTabla}>{comprobante.numero}</td>
+                    <td style={celdaTabla}>{comprobante.fecha}</td>
+                    <td style={celdaTabla}>{comprobante.colaborador}</td>
+                    <td style={celdaTabla}>{comprobante.centroCostos}</td>
+                    <td style={celdaTabla}>{comprobante.lineas.length}</td>
+                    <td style={celdaTabla}>{comprobante.totalItems}</td>
+                    <td style={celdaTabla}>{comprobante.estado}</td>
                     <td style={celdaTabla}>
-                      <button onClick={() => abrirComprobante(item)} style={botonEditar}>
+                      <button onClick={() => abrirComprobante(comprobante.primeraLinea)} style={botonEditar}>
                         Comprobante
                       </button>
 
-                      {puedeGestionarEntregas && (item.estado || "Activa") === "Activa" ? (
-                        <button onClick={() => anularEntrega(item.id)} style={botonEliminar}>
+                      {puedeGestionarEntregas && comprobante.estado === "Activa" ? (
+                        <button onClick={() => anularEntrega(comprobante.primeraLinea.id)} style={botonEliminar}>
                           Anular comprobante
                         </button>
                       ) : (
-                        item.motivoAnulacion || "-"
+                        comprobante.motivoAnulacion || "-"
                       )}
                     </td>
                   </tr>
