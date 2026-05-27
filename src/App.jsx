@@ -15,6 +15,7 @@ import {
 
 import { Campo } from "./components/Campo"
 import { LayoutInventario } from "./components/LayoutInventario"
+import { ListaBuscable } from "./components/ListaBuscable"
 import { PantallaCarga, PantallaLogin } from "./components/PantallasSesion"
 import {
   catalogoProductosBase,
@@ -605,6 +606,42 @@ function App() {
     }, {})
   ).sort((a, b) => b.cantidad - a.cantidad)
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
+  const categoriasDisponibles = ["Dotación", "EPP"]
+  const estadosPerfil = ["Activo", "Inactivo"]
+  const estadosProducto = ["Activo", "Inactivo"]
+  const estadosColaborador = ["Activo", "Retirado"]
+  const unidadesDisponibles = ["Unidad", "Par", "Caja", "Paquete", "Bono"]
+  const motivosEntrada = ["Compra", "Inventario inicial", "Reposición", "Devolución", "Ajuste inicial", "Otro"]
+  const tiposMovimiento = ["Entrada", "Devolución", "Ajuste positivo", "Ajuste negativo"]
+  const motivosEntrega = ["Ingreso", "Reposición", "Deterioro", "Dotación periódica", "Cambio de talla", "Pérdida"]
+  const tallasRopa = ["N/A", "XS", "S", "M", "L", "XL", "XXL"]
+  const tallasPantalon = ["N/A", "6", "8", "10", "12", "14", "16", "28", "30", "32", "34", "36", "38", "40"]
+  const tallasBotas = ["35", "36", "37", "38", "39", "40", "41", "42", "43"]
+  const opcionesColaboradoresEntrega = colaboradores.map((item) => ({
+    value: item.id,
+    label: `${item.nombreCompleto} - ${item.identificacion} - ${item.estado}`,
+  }))
+  const opcionesColaboradoresHistorial = colaboradores.map((item) => ({
+    value: item.id,
+    label: `${item.nombreCompleto} - ${item.identificacion}`,
+  }))
+  const opcionesProductosMovimiento = productos.map((producto) => ({
+    value: producto.id,
+    label: `${producto.nombre} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
+  }))
+  const opcionesProductosEntrega = productosOrdenadosParaEntrega
+    .filter((producto) => producto.estado === "Activo")
+    .map((producto) => ({
+      value: producto.id,
+      label: `${productoSugeridoParaColaborador(producto, colaboradorEntrega) ? "Sugerido - " : ""}${producto.nombre} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
+    }))
+  const opcionesCentrosReporte = [
+    { value: "Todos", label: "Todos" },
+    ...centrosCostos.map((centro) => ({
+      value: centro.codigo,
+      label: `${centro.codigo} - ${centro.nombre}`,
+    })),
+  ]
   const esAdministrador = perfil?.rol === "Administrador"
   const puedeGestionarProductos = ["Administrador", "Bodega"].includes(perfil?.rol)
   const puedeGestionarMovimientos = ["Administrador", "Bodega"].includes(perfil?.rol)
@@ -2173,30 +2210,33 @@ function App() {
                   </Campo>
 
                   <Campo texto="Centro de costos">
-                    <select value={filtrosReporte.centroCostos} onChange={(e) => actualizarFiltroReporte("centroCostos", e.target.value)} style={campoFormulario}>
-                      <option>Todos</option>
-                      {centrosCostos.map((centro) => (
-                        <option key={centro.codigo} value={centro.codigo}>
-                          {centro.codigo} - {centro.nombre}
-                        </option>
-                      ))}
-                    </select>
+                    <ListaBuscable
+                      value={filtrosReporte.centroCostos}
+                      onChange={(valor) => actualizarFiltroReporte("centroCostos", valor || "Todos")}
+                      options={opcionesCentrosReporte}
+                      placeholder="Todos"
+                      style={campoFormulario}
+                    />
                   </Campo>
 
                   <Campo texto="Categoría">
-                    <select value={filtrosReporte.categoria} onChange={(e) => actualizarFiltroReporte("categoria", e.target.value)} style={campoFormulario}>
-                      <option>Todas</option>
-                      <option>Dotación</option>
-                      <option>EPP</option>
-                    </select>
+                    <ListaBuscable
+                      value={filtrosReporte.categoria}
+                      onChange={(valor) => actualizarFiltroReporte("categoria", valor || "Todas")}
+                      options={["Todas", ...categoriasDisponibles]}
+                      placeholder="Todas"
+                      style={campoFormulario}
+                    />
                   </Campo>
 
                   <Campo texto="Estado">
-                    <select value={filtrosReporte.estado} onChange={(e) => actualizarFiltroReporte("estado", e.target.value)} style={campoFormulario}>
-                      <option>Todas</option>
-                      <option>Activas</option>
-                      <option>Anuladas</option>
-                    </select>
+                    <ListaBuscable
+                      value={filtrosReporte.estado}
+                      onChange={(valor) => actualizarFiltroReporte("estado", valor || "Todas")}
+                      options={["Todas", "Activas", "Anuladas"]}
+                      placeholder="Todas"
+                      style={campoFormulario}
+                    />
                   </Campo>
 
                   <Campo texto="Buscar">
@@ -2382,18 +2422,21 @@ function App() {
                 </Campo>
 
                 <Campo texto="Rol">
-                  <select value={perfilFormulario.rol} onChange={(e) => actualizarPerfilFormulario("rol", e.target.value)} style={campoFormulario}>
-                    {rolesDisponibles.map((rol) => (
-                      <option key={rol}>{rol}</option>
-                    ))}
-                  </select>
+                  <ListaBuscable
+                    value={perfilFormulario.rol}
+                    onChange={(valor) => actualizarPerfilFormulario("rol", valor || "Consulta")}
+                    options={rolesDisponibles}
+                    style={campoFormulario}
+                  />
                 </Campo>
 
                 <Campo texto="Estado">
-                  <select value={perfilFormulario.estado} onChange={(e) => actualizarPerfilFormulario("estado", e.target.value)} style={campoFormulario}>
-                    <option>Activo</option>
-                    <option>Inactivo</option>
-                  </select>
+                  <ListaBuscable
+                    value={perfilFormulario.estado}
+                    onChange={(valor) => actualizarPerfilFormulario("estado", valor || "Activo")}
+                    options={estadosPerfil}
+                    style={campoFormulario}
+                  />
                 </Campo>
 
                 <div style={filaBotones}>
@@ -2529,10 +2572,12 @@ function App() {
               </h2>
               <form onSubmit={registrarItemCatalogo} style={gridFormulario}>
                 <Campo texto="Categoría">
-                  <select value={itemCatalogo.categoria} onChange={(e) => actualizarItemCatalogo("categoria", e.target.value)} style={campoFormulario}>
-                    <option>Dotación</option>
-                    <option>EPP</option>
-                  </select>
+                  <ListaBuscable
+                    value={itemCatalogo.categoria}
+                    onChange={(valor) => actualizarItemCatalogo("categoria", valor || "Dotación")}
+                    options={categoriasDisponibles}
+                    style={campoFormulario}
+                  />
                 </Campo>
 
                 <Campo texto="Nombre del item">
@@ -2544,13 +2589,12 @@ function App() {
                 </Campo>
 
                 <Campo texto="Unidad">
-                  <select value={itemCatalogo.unidad} onChange={(e) => actualizarItemCatalogo("unidad", e.target.value)} style={campoFormulario}>
-                    <option>Unidad</option>
-                    <option>Par</option>
-                    <option>Caja</option>
-                    <option>Paquete</option>
-                    <option>Bono</option>
-                  </select>
+                  <ListaBuscable
+                    value={itemCatalogo.unidad}
+                    onChange={(valor) => actualizarItemCatalogo("unidad", valor || "Unidad")}
+                    options={unidadesDisponibles}
+                    style={campoFormulario}
+                  />
                 </Campo>
 
                 <Campo texto="Variantes">
@@ -2630,53 +2674,59 @@ function App() {
             )}
 
             <Campo texto="Categoría">
-              <select value={formulario.categoria} onChange={(e) => actualizarCampo("categoria", e.target.value)} disabled={productoEditandoTieneHistorial} style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
-                <option>Dotación</option>
-                <option>EPP</option>
-              </select>
+              <ListaBuscable
+                value={formulario.categoria}
+                onChange={(valor) => actualizarCampo("categoria", valor || "Dotación")}
+                options={categoriasDisponibles}
+                disabled={productoEditandoTieneHistorial}
+                style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Nombre del elemento">
-              <select value={formulario.nombre} onChange={(e) => actualizarCampo("nombre", e.target.value)} disabled={productoEditandoTieneHistorial} required style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
-                <option value="">Selecciona un elemento</option>
-                {productosCategoria.map((producto) => (
-                  <option key={producto.nombre} value={producto.nombre}>
-                    {producto.nombre}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={formulario.nombre}
+                onChange={(valor) => actualizarCampo("nombre", valor)}
+                options={productosCategoria.map((producto) => producto.nombre)}
+                placeholder="Selecciona un elemento"
+                disabled={productoEditandoTieneHistorial}
+                required
+                style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Tipo">
-              <select value={formulario.tipo} onChange={(e) => actualizarCampo("tipo", e.target.value)} disabled={productoEditandoTieneHistorial} required style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
-                <option value="">Selecciona un tipo</option>
-                {tiposCategoria.map((tipo) => (
-                  <option key={tipo} value={tipo}>
-                    {tipo}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={formulario.tipo}
+                onChange={(valor) => actualizarCampo("tipo", valor)}
+                options={tiposCategoria}
+                placeholder="Selecciona un tipo"
+                disabled={productoEditandoTieneHistorial}
+                required
+                style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla o variante">
-              <select value={formulario.variante} onChange={(e) => actualizarCampo("variante", e.target.value)} disabled={productoEditandoTieneHistorial} required style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
-                <option value="">Selecciona una variante</option>
-                {variantesProducto.map((variante) => (
-                  <option key={variante} value={variante}>
-                    {variante}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={formulario.variante}
+                onChange={(valor) => actualizarCampo("variante", valor)}
+                options={variantesProducto}
+                placeholder="Selecciona una variante"
+                disabled={productoEditandoTieneHistorial}
+                required
+                style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Unidad">
-              <select value={formulario.unidad} onChange={(e) => actualizarCampo("unidad", e.target.value)} disabled={productoEditandoTieneHistorial} style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}>
-                <option>Unidad</option>
-                <option>Par</option>
-                <option>Caja</option>
-                <option>Paquete</option>
-                <option>Bono</option>
-              </select>
+              <ListaBuscable
+                value={formulario.unidad}
+                onChange={(valor) => actualizarCampo("unidad", valor || "Unidad")}
+                options={unidadesDisponibles}
+                disabled={productoEditandoTieneHistorial}
+                style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Ubicación">
@@ -2697,14 +2747,12 @@ function App() {
 
             {!productoEditandoId && (
               <Campo texto="Motivo de entrada">
-                <select value={formulario.motivoEntrada || "Compra"} onChange={(e) => actualizarCampo("motivoEntrada", e.target.value)} style={campoFormulario}>
-                  <option>Compra</option>
-                  <option>Inventario inicial</option>
-                  <option>Reposición</option>
-                  <option>Devolución</option>
-                  <option>Ajuste inicial</option>
-                  <option>Otro</option>
-                </select>
+                <ListaBuscable
+                  value={formulario.motivoEntrada || "Compra"}
+                  onChange={(valor) => actualizarCampo("motivoEntrada", valor || "Compra")}
+                  options={motivosEntrada}
+                  style={campoFormulario}
+                />
               </Campo>
             )}
 
@@ -2726,10 +2774,12 @@ function App() {
             </Campo>
 
             <Campo texto="Estado">
-              <select value={formulario.estado} onChange={(e) => actualizarCampo("estado", e.target.value)} style={campoFormulario}>
-                <option>Activo</option>
-                <option>Inactivo</option>
-              </select>
+              <ListaBuscable
+                value={formulario.estado}
+                onChange={(valor) => actualizarCampo("estado", valor || "Activo")}
+                options={estadosProducto}
+                style={campoFormulario}
+              />
             </Campo>
 
             <div style={filaBotones}>
@@ -2834,23 +2884,23 @@ function App() {
 
           <form onSubmit={registrarMovimiento} style={gridFormulario}>
             <Campo texto="Producto">
-              <select value={movimiento.productoId} onChange={(e) => actualizarMovimiento("productoId", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona un producto registrado</option>
-                {productos.map((producto) => (
-                  <option key={producto.id} value={producto.id}>
-                    {producto.nombre} - {producto.variante} - Stock: {producto.stockActual} {producto.unidad}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={movimiento.productoId}
+                onChange={(valor) => actualizarMovimiento("productoId", valor)}
+                options={opcionesProductosMovimiento}
+                placeholder="Selecciona un producto registrado"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Tipo de movimiento">
-              <select value={movimiento.tipoMovimiento} onChange={(e) => actualizarMovimiento("tipoMovimiento", e.target.value)} style={campoFormulario}>
-                <option>Entrada</option>
-                <option>Devolución</option>
-                <option>Ajuste positivo</option>
-                <option>Ajuste negativo</option>
-              </select>
+              <ListaBuscable
+                value={movimiento.tipoMovimiento}
+                onChange={(valor) => actualizarMovimiento("tipoMovimiento", valor || "Entrada")}
+                options={tiposMovimiento}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Cantidad">
@@ -2971,25 +3021,25 @@ function App() {
             </Campo>
 
             <Campo texto="Sub-Área">
-              <select value={colaborador.subArea} onChange={(e) => actualizarColaborador("subArea", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona sub-Área</option>
-                {subAreasDisponibles.map((subArea) => (
-                  <option key={subArea} value={subArea}>
-                    {subArea}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={colaborador.subArea}
+                onChange={(valor) => actualizarColaborador("subArea", valor)}
+                options={subAreasDisponibles}
+                placeholder="Selecciona sub-Área"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Grupo">
-              <select value={colaborador.grupo} onChange={(e) => actualizarColaborador("grupo", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona grupo</option>
-                {gruposDisponibles.map((grupo) => (
-                  <option key={grupo} value={grupo}>
-                    {grupo}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={colaborador.grupo}
+                onChange={(valor) => actualizarColaborador("grupo", valor)}
+                options={gruposDisponibles}
+                placeholder="Selecciona grupo"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Centro de costos">
@@ -3002,98 +3052,79 @@ function App() {
             </Campo>
 
             <Campo texto="Nombre centro de costos">
-              <select value={colaborador.nombreCentroCostos} onChange={(e) => actualizarColaborador("nombreCentroCostos", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona centro de costos</option>
-                {centrosCostos.map((centro) => (
-                  <option key={centro.codigo} value={centro.nombre}>
-                    {centro.nombre}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={colaborador.nombreCentroCostos}
+                onChange={(valor) => actualizarColaborador("nombreCentroCostos", valor)}
+                options={centrosCostos.map((centro) => centro.nombre)}
+                placeholder="Selecciona centro de costos"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Sexo">
-              <select value={colaborador.sexo} onChange={(e) => actualizarColaborador("sexo", e.target.value)} style={campoFormulario}>
-                <option>Femenino</option>
-                <option>Masculino</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.sexo}
+                onChange={(valor) => actualizarColaborador("sexo", valor || "Femenino")}
+                options={["Femenino", "Masculino"]}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Estado">
-              <select value={colaborador.estado} onChange={(e) => actualizarColaborador("estado", e.target.value)} style={campoFormulario}>
-                <option>Activo</option>
-                <option>Retirado</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.estado}
+                onChange={(valor) => actualizarColaborador("estado", valor || "Activo")}
+                options={estadosColaborador}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla antifluido">
-              <select value={colaborador.tallaAntifluido} onChange={(e) => actualizarColaborador("tallaAntifluido", e.target.value)} style={campoFormulario}>
-                <option>N/A</option>
-                <option>XS</option>
-                <option>S</option>
-                <option>M</option>
-                <option>L</option>
-                <option>XL</option>
-                <option>XXL</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.tallaAntifluido}
+                onChange={(valor) => actualizarColaborador("tallaAntifluido", valor || "N/A")}
+                options={tallasRopa}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla bata">
-              <select value={colaborador.tallaBata} onChange={(e) => actualizarColaborador("tallaBata", e.target.value)} style={campoFormulario}>
-                <option>N/A</option>
-                <option>XS</option>
-                <option>S</option>
-                <option>M</option>
-                <option>L</option>
-                <option>XL</option>
-                <option>XXL</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.tallaBata}
+                onChange={(valor) => actualizarColaborador("tallaBata", valor || "N/A")}
+                options={tallasRopa}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla camisa">
-              <select value={colaborador.tallaCamisa} onChange={(e) => actualizarColaborador("tallaCamisa", e.target.value)} style={campoFormulario}>
-                <option>N/A</option>
-                <option>XS</option>
-                <option>S</option>
-                <option>M</option>
-                <option>L</option>
-                <option>XL</option>
-                <option>XXL</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.tallaCamisa}
+                onChange={(valor) => actualizarColaborador("tallaCamisa", valor || "N/A")}
+                options={tallasRopa}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla pantalón">
-              <select value={colaborador.tallaPantalon} onChange={(e) => actualizarColaborador("tallaPantalon", e.target.value)} style={campoFormulario}>
-                <option>N/A</option>
-                <option>6</option>
-                <option>8</option>
-                <option>10</option>
-                <option>12</option>
-                <option>14</option>
-                <option>16</option>
-                <option>28</option>
-                <option>30</option>
-                <option>32</option>
-                <option>34</option>
-                <option>36</option>
-                <option>38</option>
-                <option>40</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.tallaPantalon}
+                onChange={(valor) => actualizarColaborador("tallaPantalon", valor || "N/A")}
+                options={tallasPantalon}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Talla botas">
-              <select value={colaborador.tallaBotas} onChange={(e) => actualizarColaborador("tallaBotas", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona talla</option>
-                <option>35</option>
-                <option>36</option>
-                <option>37</option>
-                <option>38</option>
-                <option>39</option>
-                <option>40</option>
-                <option>41</option>
-                <option>42</option>
-                <option>43</option>
-              </select>
+              <ListaBuscable
+                value={colaborador.tallaBotas}
+                onChange={(valor) => actualizarColaborador("tallaBotas", valor)}
+                options={tallasBotas}
+                placeholder="Selecciona talla"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             <div style={filaBotones}>
@@ -3202,14 +3233,14 @@ function App() {
 
           <form onSubmit={registrarEntrega} style={gridFormulario}>
             <Campo texto="Colaborador">
-              <select value={entrega.colaboradorId} onChange={(e) => actualizarEntrega("colaboradorId", e.target.value)} required style={campoFormulario}>
-                <option value="">Selecciona colaborador</option>
-                {colaboradores.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombreCompleto} - {item.identificacion} - {item.estado}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={entrega.colaboradorId}
+                onChange={(valor) => actualizarEntrega("colaboradorId", valor)}
+                options={opcionesColaboradoresEntrega}
+                placeholder="Selecciona colaborador"
+                required
+                style={campoFormulario}
+              />
             </Campo>
 
             {colaboradorEntrega && (
@@ -3224,15 +3255,13 @@ function App() {
             )}
 
             <Campo texto="Producto">
-              <select value={lineaEntrega.productoId} onChange={(e) => actualizarLineaEntrega("productoId", e.target.value)} style={campoFormulario}>
-                <option value="">Selecciona producto</option>
-                {productosOrdenadosParaEntrega.filter((producto) => producto.estado === "Activo").map((producto) => (
-                  <option key={producto.id} value={producto.id}>
-                    {productoSugeridoParaColaborador(producto, colaboradorEntrega) ? "Sugerido - " : ""}
-                    {producto.nombre} - {producto.variante} - Stock: {producto.stockActual} {producto.unidad}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={lineaEntrega.productoId}
+                onChange={(valor) => actualizarLineaEntrega("productoId", valor)}
+                options={opcionesProductosEntrega}
+                placeholder="Selecciona producto"
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Cantidad">
@@ -3283,14 +3312,12 @@ function App() {
             </Campo>
 
             <Campo texto="Motivo">
-              <select value={entrega.motivo} onChange={(e) => actualizarEntrega("motivo", e.target.value)} style={campoFormulario}>
-                <option>Ingreso</option>
-                <option>Reposición</option>
-                <option>Deterioro</option>
-                <option>Dotación periódica</option>
-                <option>Cambio de talla</option>
-                <option>Pérdida</option>
-              </select>
+              <ListaBuscable
+                value={entrega.motivo}
+                onChange={(valor) => actualizarEntrega("motivo", valor || "Ingreso")}
+                options={motivosEntrega}
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Responsable">
@@ -3317,14 +3344,13 @@ function App() {
 
           <div style={{ ...gridFormulario, alignItems: "end" }}>
             <Campo texto="Colaborador">
-              <select value={colaboradorHistorialId} onChange={(e) => setColaboradorHistorialId(e.target.value)} style={campoFormulario}>
-                <option value="">Selecciona colaborador para consultar</option>
-                {colaboradores.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombreCompleto} - {item.identificacion}
-                  </option>
-                ))}
-              </select>
+              <ListaBuscable
+                value={colaboradorHistorialId}
+                onChange={setColaboradorHistorialId}
+                options={opcionesColaboradoresHistorial}
+                placeholder="Selecciona colaborador para consultar"
+                style={campoFormulario}
+              />
             </Campo>
           </div>
 
