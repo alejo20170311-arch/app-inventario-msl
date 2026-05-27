@@ -153,7 +153,7 @@ export const subAreasDisponibles = [
 export const centrosCostos = [
   { codigo: "750102", nombre: "Generales Gestion Humana" },
   { codigo: "730501", nombre: "Generales Produccion" },
-  { codigo: "740201", nombre: "Distribucion Comercial" },
+  { codigo: "740201", nombre: "Distribucion CEDI" },
   { codigo: "720101", nombre: "Generales Comercial" },
   { codigo: "730100", nombre: "Recolector Planta Ambientadores" },
   { codigo: "730301", nombre: "Recolector Solidos" },
@@ -162,5 +162,5 @@ export const centrosCostos = [
   { codigo: "730403", nombre: "Mtto Msl" },
   { codigo: "750301", nombre: "Gestion Ambiental" },
   { codigo: "730402", nombre: "Laboratorio Msl" },
-  { codigo: "730701", nombre: "Generales Calidad" },
+  { codigo: "730701", nombre: "Generales Cadena de Abastecimiento" },
 ]
