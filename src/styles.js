@@ -310,6 +310,44 @@ export const resumenLineasEntrega = {
   background: "#ffffff",
 }
 
+export const modalBackdrop = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 50,
+  display: "grid",
+  placeItems: "center",
+  padding: "24px",
+  background: "rgba(7, 11, 29, 0.46)",
+}
+
+export const modalPanel = {
+  width: "min(540px, 100%)",
+  background: "#ffffff",
+  border: `1px solid ${borde}`,
+  borderRadius: "8px",
+  padding: "22px",
+  boxShadow: "0 24px 70px rgba(7, 11, 29, 0.24)",
+}
+
+export const modalResumen = {
+  display: "grid",
+  gap: "6px",
+  margin: "14px 0",
+  padding: "12px",
+  border: `1px solid ${borde}`,
+  borderLeft: `5px solid ${azul}`,
+  borderRadius: "8px",
+  background: azulSuave,
+}
+
+export const modalAcciones = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: "10px",
+  flexWrap: "wrap",
+  marginTop: "16px",
+}
+
 export const celdaTabla = {
   padding: "12px 14px",
   borderBottom: `1px solid ${borde}`,

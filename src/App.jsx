@@ -6,16 +6,16 @@ import {
   ClipboardCheck,
   Download,
   Home,
-  LogOut,
   Package,
   Plus,
   ShieldAlert,
-  Sparkles,
   UserRound,
   Users,
 } from "lucide-react"
 
 import { Campo } from "./components/Campo"
+import { LayoutInventario } from "./components/LayoutInventario"
+import { PantallaCarga, PantallaLogin } from "./components/PantallasSesion"
 import {
   catalogoProductosBase,
   centrosCostos,
@@ -30,22 +30,21 @@ import {
 } from "./data/inventario"
 import {
   cargarDatosInventario,
-  catalogoDesdeSupabase,
-  catalogoParaSupabase,
   colaboradorDesdeSupabase,
   colaboradorParaSupabase,
   productoDesdeSupabase,
-  productoParaSupabase,
 } from "./lib/inventarioSupabase"
 import {
-  actualizarProductoConMovimiento,
   anularComprobanteRpc,
-  crearProductoConMovimiento,
+  guardarCatalogoProductoRpc,
+  guardarColaboradorRpc,
+  guardarProductoMovimientoRpc,
   registrarEntregaRpc,
 } from "./lib/operacionesInventario"
 import { supabase } from "./lib/supabase"
+import { PanelPrincipal } from "./modules/PanelPrincipal"
 import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
-import { exportarCsv, leerCsv } from "./utils/csv"
+import { exportarCsv, exportarXlsx, leerCsv } from "./utils/csv"
 import { ahoraISO, fechaLocalISO, mesLocalISO } from "./utils/fechas"
 import {
   coincideBusqueda,
@@ -60,45 +59,33 @@ import {
 } from "./utils/inventario"
 import {
   accionesModulo,
-  appShell,
   ayudaFormulario,
-  barraPestanas,
-  botonCerrarMensaje,
   botonEditar,
   botonEliminar,
   botonFiltro,
-  botonPestana,
   botonPrincipal,
   filaBotones,
   botonSecundario,
   campoBusqueda,
   campoFormulario,
   celdaTabla,
-  contentShell,
   dashboardGrid,
   encabezadoTabla,
   filaAnulada,
   gridFormulario,
   grupoFiltros,
   iconoIndicador,
-  mensajeApp,
+  modalAcciones,
+  modalBackdrop,
+  modalPanel,
+  modalResumen,
   panelBloque,
   panelGrid,
   resumenHistorial,
   resumenLineasEntrega,
   resumenTallas,
-  sidebar,
-  sidebarButton,
-  sidebarFooter,
-  sidebarLogo,
-  sidebarNav,
-  sidebarUser,
   tabla,
   tarjetaIndicador,
-  titleBlock,
-  topBar,
-  userAvatar,
-  userSummary,
 } from "./styles"
 
 const assetUrl = (path) => `${import.meta.env.BASE_URL}${path}`
@@ -158,6 +145,11 @@ function App() {
   const [colaboradorHistorialId, setColaboradorHistorialId] = useState("")
   const [colaboradores, setColaboradores] = useState([])
   const [perfiles, setPerfiles] = useState([])
+  const [auditoria, setAuditoria] = useState([])
+  const [accionGuardando, setAccionGuardando] = useState("")
+  const [anulacionPendiente, setAnulacionPendiente] = useState(null)
+  const [motivoAnulacion, setMotivoAnulacion] = useState("")
+  const [comprobanteExpandidoId, setComprobanteExpandidoId] = useState("")
   const [perfilEditandoId, setPerfilEditandoId] = useState(null)
   const [perfilFormulario, setPerfilFormulario] = useState({
     id: "",
@@ -268,16 +260,26 @@ function App() {
         setColaboradores(datos.colaboradores)
 
         if (perfil.rol === "Administrador") {
-          const { data: perfilesData, error: perfilesError } = await supabase
-            .from("perfiles")
-            .select("id, nombre, correo, rol, estado, creado_en")
-            .order("nombre")
+          const [perfilesRespuesta, auditoriaRespuesta] = await Promise.all([
+            supabase
+              .from("perfiles")
+              .select("id, nombre, correo, rol, estado, creado_en")
+              .order("nombre"),
+            supabase
+              .from("auditoria")
+              .select("id, usuario_id, accion, tabla, registro_id, detalle, creado_en")
+              .order("creado_en", { ascending: false })
+              .limit(200),
+          ])
 
-          if (perfilesError) throw perfilesError
+          if (perfilesRespuesta.error) throw perfilesRespuesta.error
+          if (auditoriaRespuesta.error) throw auditoriaRespuesta.error
 
-          setPerfiles(perfilesData || [])
+          setPerfiles(perfilesRespuesta.data || [])
+          setAuditoria(auditoriaRespuesta.data || [])
         } else {
           setPerfiles([])
+          setAuditoria([])
         }
       } catch (error) {
         if (activo) {
@@ -301,66 +303,20 @@ function App() {
   }, [sesion, perfil])
 
   if (cargandoSesion || cargandoDatos) {
-    return (
-      <main style={{ background: "#E0E5EB", minHeight: "100vh", display: "grid", placeItems: "center", padding: "32px" }}>
-        <section style={{ background: "#FFFFFF", borderRadius: "12px", padding: "28px", width: "100%", maxWidth: "420px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
-          <img src={assetUrl("logo-msl-Azul.jpg")} alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
-          <h1 style={{ margin: 0, fontSize: "26px" }}>Cargando inventario</h1>
-          <p style={{ margin: "10px 0 0" }}>Estamos revisando tu Sesión.</p>
-        </section>
-      </main>
-    )
+    return <PantallaCarga assetUrl={assetUrl} />
   }
 
   if (!sesion || !perfil) {
     return (
-      <main style={{ background: "#E0E5EB", minHeight: "100vh", display: "grid", placeItems: "center", padding: "32px" }}>
-        <section style={{ background: "#FFFFFF", borderRadius: "12px", overflow: "hidden", width: "100%", maxWidth: "460px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
-          <header style={{ background: "#000000", color: "#FFFFFF", padding: "26px" }}>
-            <img src={assetUrl("logo-msl-blanco.png")} alt="MSL Group" style={{ width: "150px", display: "block", marginBottom: "18px" }} />
-            <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "28px" }}>Inventario Dotación y EPP</h1>
-            <p style={{ margin: "8px 0 0", color: "#E0E5EB" }}>Ingreso de usuarios autorizados</p>
-          </header>
-
-          <form onSubmit={iniciarSesion} style={{ display: "grid", gap: "16px", padding: "26px" }}>
-            {errorLogin && (
-              <div style={mensajeApp("error")}>
-                <strong>{errorLogin}</strong>
-              </div>
-            )}
-
-            <Campo texto="Correo">
-              <input
-                type="email"
-                value={credenciales.correo}
-                onChange={(e) => actualizarCredenciales("correo", e.target.value)}
-                required
-                autoComplete="email"
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <Campo texto="Contraseña">
-              <input
-                type="password"
-                value={credenciales.contrasena}
-                onChange={(e) => actualizarCredenciales("contrasena", e.target.value)}
-                required
-                autoComplete="current-password"
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <button style={botonPrincipal}>Ingresar</button>
-
-            {sesion && (
-              <button type="button" onClick={cerrarSesion} style={botonSecundario}>
-                Cerrar Sesión actual
-              </button>
-            )}
-          </form>
-        </section>
-      </main>
+      <PantallaLogin
+        assetUrl={assetUrl}
+        credenciales={credenciales}
+        errorLogin={errorLogin}
+        sesion={sesion}
+        actualizarCredenciales={actualizarCredenciales}
+        iniciarSesion={iniciarSesion}
+        cerrarSesion={cerrarSesion}
+      />
     )
   }
 
@@ -443,7 +399,10 @@ function App() {
         numero: item.numeroComprobante || item.id,
         fecha: item.fecha,
         colaborador: item.colaborador,
+        identificacion: item.identificacion,
         centroCostos: item.centroCostos,
+        responsable: item.responsable,
+        estado: "Activa",
         motivoAnulacion: item.motivoAnulacion,
         lineas: [],
         totalItems: 0,
@@ -476,6 +435,7 @@ function App() {
         fecha: item.fecha,
         motivo: item.motivo,
         responsable: item.responsable,
+        motivoAnulacion: item.motivoAnulacion,
         lineas: [],
         totalItems: 0,
       }
@@ -658,6 +618,7 @@ function App() {
     return coincideFiltro &&
       coincideBusqueda(item, busquedaPerfiles, ["nombre", "correo", "rol", "estado"])
   })
+  const perfilesPorId = new Map(perfiles.map((item) => [item.id, item]))
   const productosStockCritico = productosStockBajo.filter(
     (producto) => Number(producto.stockActual) <= Math.max(1, Number(producto.stockMinimo) / 2)
   )
@@ -673,11 +634,12 @@ function App() {
     { id: "entregas", texto: "Entregas", icono: ClipboardCheck },
     { id: "reportes", texto: "Reportes", icono: BarChart3 },
     { id: "usuarios", texto: "Usuarios", icono: UserRound, soloAdmin: true },
+    { id: "auditoria", texto: "Auditoría", icono: ShieldAlert, soloAdmin: true },
   ].filter((item) => !item.soloAdmin || esAdministrador)
   const indicadoresPrincipales = [
     { texto: "Productos", valor: productos.length, icono: Package, color: "#0500ff" },
     { texto: "Colaboradores activos", valor: colaboradoresActivos.length, icono: Users, color: "#5b8dff" },
-    { texto: "Entregas", valor: entregas.length, icono: ClipboardCheck, color: "#5b8dff" },
+    { texto: "Entregas activas", valor: entregasActivas.length, icono: ClipboardCheck, color: "#5b8dff" },
     { texto: "Stock bajo", valor: productosStockBajo.length, icono: Boxes, color: "#0500ff" },
   ]
   const indicadoresPanel = [
@@ -707,7 +669,30 @@ function App() {
   }
 
   function mostrarErrorSupabase(error, accion = "guardar la información") {
-    mostrarMensaje(`No se pudo ${accion}: ${error.message}`, "error")
+    const mensajeOriginal = String(error?.message || error || "")
+    const mensaje = mensajeOriginal.toLowerCase()
+
+    if (mensaje.includes("row-level security") || mensaje.includes("permission denied")) {
+      mostrarMensaje(`No se pudo ${accion}: tu rol no tiene permiso para esta acción.`, "error")
+      return
+    }
+
+    if (mensaje.includes("duplicate key") || mensaje.includes("unique constraint")) {
+      mostrarMensaje(`No se pudo ${accion}: ya existe un registro con esos datos.`, "error")
+      return
+    }
+
+    if (mensaje.includes("could not find the function") || mensaje.includes("function") && mensaje.includes("does not exist")) {
+      mostrarMensaje(`No se pudo ${accion}: falta aplicar una función RPC en Supabase.`, "error")
+      return
+    }
+
+    if (mensaje.includes("jwt") || mensaje.includes("session")) {
+      mostrarMensaje(`No se pudo ${accion}: la sesión venció. Cierra sesión e ingresa de nuevo.`, "error")
+      return
+    }
+
+    mostrarMensaje(`No se pudo ${accion}: ${mensajeOriginal}`, "error")
   }
 
   function requierePermiso(condicion, mensajePermiso) {
@@ -715,6 +700,10 @@ function App() {
 
     mostrarMensaje(mensajePermiso, "error")
     return false
+  }
+
+  function estaGuardando(accion) {
+    return accionGuardando === accion
   }
 
   function actualizarPerfilFormulario(campo, valor) {
@@ -750,6 +739,7 @@ function App() {
     evento.preventDefault()
 
     if (!requierePermiso(esAdministrador, "Solo un administrador puede gestionar usuarios.")) return
+    if (accionGuardando) return
 
     const payload = {
       id: perfilFormulario.id.trim(),
@@ -763,6 +753,8 @@ function App() {
       mostrarMensaje("Completa el ID de Supabase Auth, nombre y correo.", "error")
       return
     }
+
+    setAccionGuardando("perfil")
 
     try {
       const { data, error } = await supabase
@@ -785,11 +777,14 @@ function App() {
       mostrarMensaje("Perfil guardado correctamente.", "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "guardar el perfil")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
   async function cambiarEstadoPerfil(item) {
     if (!requierePermiso(esAdministrador, "Solo un administrador puede cambiar usuarios.")) return
+    if (accionGuardando) return
 
     if (item.id === sesion?.user?.id && item.estado === "Activo") {
       mostrarMensaje("No puedes inactivar tu propio usuario desde esta pantalla.", "error")
@@ -797,6 +792,8 @@ function App() {
     }
 
     const nuevoEstado = item.estado === "Activo" ? "Inactivo" : "Activo"
+
+    setAccionGuardando(`perfil-${item.id}`)
 
     try {
       const { data, error } = await supabase
@@ -812,6 +809,8 @@ function App() {
       mostrarMensaje(`Usuario ${nuevoEstado.toLowerCase()} correctamente.`, "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "actualizar el estado del perfil")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
@@ -855,6 +854,7 @@ function App() {
     setEntregas([])
     setColaboradores([])
     setPerfiles([])
+    setAuditoria([])
     setPestanaActiva("panel")
     mostrarMensaje("Sesión cerrada correctamente.", "exito")
   }
@@ -942,6 +942,7 @@ function App() {
   async function registrarItemCatalogo(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite modificar el catálogo.")) return
+    if (accionGuardando) return
 
     const variantes = itemCatalogo.variantes
       .split(",")
@@ -974,6 +975,8 @@ function App() {
       stockMinimo: Number(itemCatalogo.stockMinimo),
     }
 
+    setAccionGuardando("catalogo")
+
     try {
       if (itemCatalogoEditandoClave) {
         const itemOriginal = catalogoProductos.find(
@@ -985,22 +988,10 @@ function App() {
           return
         }
 
-        let consulta = supabase
-          .from("catalogo_productos")
-          .update(catalogoParaSupabase(nuevoItem))
-          .select("*")
-
-        consulta = itemOriginal.id
-          ? consulta.eq("id", itemOriginal.id)
-          : consulta
-              .eq("categoria", itemOriginal.categoria)
-              .eq("nombre", itemOriginal.nombre)
-
-        const { data, error } = await consulta.single()
-
-        if (error) throw error
-
-        const itemActualizado = catalogoDesdeSupabase(data)
+        const itemActualizado = await guardarCatalogoProductoRpc({
+          catalogoId: itemOriginal.id,
+          catalogoPayload: nuevoItem,
+        })
 
         setCatalogoProductos(
           catalogoProductos.map((item) =>
@@ -1009,20 +1000,18 @@ function App() {
         )
         mostrarMensaje("Item actualizado. Los cambios ya aparecen en el formulario de productos.")
       } else {
-        const { data, error } = await supabase
-          .from("catalogo_productos")
-          .insert(catalogoParaSupabase(nuevoItem))
-          .select("*")
-          .single()
+        const itemCreado = await guardarCatalogoProductoRpc({
+          catalogoPayload: nuevoItem,
+        })
 
-        if (error) throw error
-
-        setCatalogoProductos([...catalogoProductos, catalogoDesdeSupabase(data)])
+        setCatalogoProductos([...catalogoProductos, itemCreado])
         mostrarMensaje("Item nuevo creado. Ya aparece en el formulario de productos.")
       }
     } catch (error) {
       mostrarErrorSupabase(error, "guardar el catálogo")
       return
+    } finally {
+      setAccionGuardando("")
     }
 
     setItemCatalogo(itemCatalogoVacio)
@@ -1304,6 +1293,7 @@ function App() {
   async function registrarProducto(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite registrar o editar productos.")) return
+    if (accionGuardando) return
 
     const cantidadEntrada = Number(formulario.stockActual)
     const motivoEntrada = formulario.motivoEntrada || "Compra"
@@ -1321,6 +1311,8 @@ function App() {
       estado: formulario.estado,
     }
 
+    setAccionGuardando("producto")
+
     try {
       if (productoEditandoId) {
         if (productoEditandoTieneHistorial && productoEditando) {
@@ -1334,19 +1326,10 @@ function App() {
           }
         }
 
-        const { data, error } = await supabase
-          .from("productos")
-          .update({
-            ...productoParaSupabase(datosProducto),
-            actualizado_en: ahoraISO(),
-          })
-          .eq("id", productoEditandoId)
-          .select("*")
-          .single()
-
-        if (error) throw error
-
-        const productoActualizado = productoDesdeSupabase(data)
+        const { producto: productoActualizado } = await guardarProductoMovimientoRpc({
+          productoId: productoEditandoId,
+          productoPayload: datosProducto,
+        })
 
         setProductos(
           productos.map((producto) =>
@@ -1368,7 +1351,6 @@ function App() {
       )
 
       if (productoExistente) {
-        const nuevoStock = Number(productoExistente.stockActual) + cantidadEntrada
         const nuevoMovimiento = cantidadEntrada > 0
           ? {
             id: crypto.randomUUID(),
@@ -1380,21 +1362,19 @@ function App() {
             cantidad: cantidadEntrada,
             fecha: fechaLocalISO(),
             observacion: observacionEntrada,
-            stockResultante: nuevoStock,
+            stockResultante: productoExistente.stockActual,
           }
           : null
 
         const {
           producto: productoActualizado,
           movimiento: movimientoCreado,
-        } = await actualizarProductoConMovimiento({
-          productoAnterior: productoExistente,
+        } = await guardarProductoMovimientoRpc({
+          productoId: productoExistente.id,
           productoPayload: {
             ...datosProducto,
-            stockActual: nuevoStock,
           },
           movimiento: nuevoMovimiento,
-          usuarioId: sesion?.user?.id,
         })
 
         setProductos(
@@ -1410,26 +1390,25 @@ function App() {
         const {
           producto: nuevoProducto,
           movimiento: movimientoCreado,
-        } = await crearProductoConMovimiento({
+        } = await guardarProductoMovimientoRpc({
           productoPayload: {
             ...datosProducto,
             stockActual: cantidadEntrada,
           },
-          crearMovimiento: cantidadEntrada > 0
-            ? (productoCreado) => ({
+          movimiento: cantidadEntrada > 0
+            ? {
                 id: crypto.randomUUID(),
-                productoId: productoCreado.id,
-                producto: productoCreado.nombre,
-                variante: productoCreado.variante,
-                unidad: productoCreado.unidad,
+                productoId: "",
+                producto: datosProducto.nombre,
+                variante: datosProducto.variante,
+                unidad: datosProducto.unidad,
                 tipoMovimiento: "Entrada",
                 cantidad: cantidadEntrada,
                 fecha: fechaLocalISO(),
                 observacion: observacionEntrada,
-                stockResultante: productoCreado.stockActual,
-              })
+                stockResultante: cantidadEntrada,
+              }
             : null,
-          usuarioId: sesion?.user?.id,
         })
 
         setProductos([...productos, nuevoProducto])
@@ -1442,12 +1421,15 @@ function App() {
       setFormulario(formularioVacio)
     } catch (error) {
       mostrarErrorSupabase(error, "guardar el producto")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
   async function registrarMovimiento(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarMovimientos, "Tu rol no permite registrar movimientos de inventario.")) return
+    if (accionGuardando) return
 
     if (!productoMovimiento) {
       mostrarMensaje("Selecciona un producto para registrar el movimiento.")
@@ -1496,17 +1478,25 @@ function App() {
       stockResultante: nuevoStock,
     }
 
+    setAccionGuardando("movimiento")
+
     try {
       const {
         producto: productoActualizado,
         movimiento: movimientoCreado,
-      } = await actualizarProductoConMovimiento({
-        productoAnterior: productoMovimiento,
+      } = await guardarProductoMovimientoRpc({
+        productoId: productoMovimiento.id,
         productoPayload: {
-          stockActual: nuevoStock,
+          nombre: productoMovimiento.nombre,
+          categoria: productoMovimiento.categoria,
+          tipo: productoMovimiento.tipo,
+          variante: productoMovimiento.variante,
+          unidad: productoMovimiento.unidad,
+          stockMinimo: productoMovimiento.stockMinimo,
+          ubicacion: productoMovimiento.ubicacion,
+          estado: productoMovimiento.estado,
         },
         movimiento: nuevoMovimiento,
-        usuarioId: sesion?.user?.id,
       })
 
       setProductos(
@@ -1519,12 +1509,15 @@ function App() {
       mostrarMensaje("Movimiento registrado correctamente.", "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "registrar el movimiento")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
   async function registrarColaborador(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite registrar o editar colaboradores.")) return
+    if (accionGuardando) return
 
     const colaboradorExistente = colaboradores.find(
       (item) =>
@@ -1537,6 +1530,8 @@ function App() {
       return
     }
 
+    setAccionGuardando("colaborador")
+
     try {
       if (colaboradorEditandoId) {
         if (
@@ -1548,19 +1543,10 @@ function App() {
           return
         }
 
-        const { data, error } = await supabase
-          .from("colaboradores")
-          .update({
-            ...colaboradorParaSupabase(colaborador),
-            actualizado_en: ahoraISO(),
-          })
-          .eq("id", colaboradorEditandoId)
-          .select("*")
-          .single()
-
-        if (error) throw error
-
-        const colaboradorActualizado = colaboradorDesdeSupabase(data)
+        const colaboradorActualizado = await guardarColaboradorRpc({
+          colaboradorId: colaboradorEditandoId,
+          colaboradorPayload: colaborador,
+        })
 
         setColaboradores(
           colaboradores.map((item) =>
@@ -1573,25 +1559,24 @@ function App() {
         return
       }
 
-      const { data, error } = await supabase
-        .from("colaboradores")
-        .insert(colaboradorParaSupabase(colaborador))
-        .select("*")
-        .single()
+      const colaboradorCreado = await guardarColaboradorRpc({
+        colaboradorPayload: colaborador,
+      })
 
-      if (error) throw error
-
-      setColaboradores([...colaboradores, colaboradorDesdeSupabase(data)])
+      setColaboradores([...colaboradores, colaboradorCreado])
       setColaborador(colaboradorVacio)
       mostrarMensaje("Colaborador registrado correctamente.", "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "guardar el colaborador")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
   async function registrarEntrega(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite registrar entregas.")) return
+    if (accionGuardando) return
 
     if (!colaboradorEntrega) {
       mostrarMensaje("Selecciona colaborador para registrar la entrega.")
@@ -1636,6 +1621,8 @@ function App() {
       return
     }
 
+    setAccionGuardando("entrega")
+
     try {
       const entregaGuardada = await registrarEntregaRpc({
         entrega,
@@ -1669,11 +1656,14 @@ function App() {
       mostrarMensaje(`Entrega registrada correctamente. Comprobante: ${numeroComprobante || "creado"}`, "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "registrar la entrega")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
-  async function anularEntrega(entregaId) {
+  function anularEntrega(entregaId) {
     if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite anular comprobantes.")) return
+    if (accionGuardando) return
 
     const entregaSeleccionada = entregas.find((item) => item.id === entregaId)
 
@@ -1693,29 +1683,49 @@ function App() {
       return
     }
 
-    const motivoAnulacion = window.prompt("Motivo de anulación (obligatorio, Mínimo 8 caracteres)")?.trim()
-
-    if (!motivoAnulacion || motivoAnulacion.length < 8) {
-      mostrarMensaje("La anulación necesita un motivo claro de al menos 8 caracteres.", "error")
-      return
-    }
-
     const totalDevuelto = entregasComprobante.reduce(
       (total, item) => total + Number(item.cantidad || 0),
       0
     )
-    const confirmar = window.confirm(
-      `Vas a anular todo el comprobante ${entregaSeleccionada.numeroComprobante || entregaSeleccionada.id}. Se devolverán ${totalDevuelto} ítems al stock y quedará registro en movimientos. ¿Continuar?`
-    )
 
-    if (!confirmar) {
+    setMotivoAnulacion("")
+    setAnulacionPendiente({
+      entregaId,
+      entregaSeleccionada,
+      lineas: entregasComprobante,
+      totalDevuelto,
+    })
+  }
+
+  function cancelarAnulacion() {
+    if (accionGuardando) return
+
+    setAnulacionPendiente(null)
+    setMotivoAnulacion("")
+  }
+
+  async function confirmarAnulacion(evento) {
+    evento.preventDefault()
+
+    if (!anulacionPendiente) {
       return
     }
+
+    const motivo = motivoAnulacion.trim()
+
+    if (motivo.length < 8) {
+      mostrarMensaje("La anulación necesita un motivo claro de al menos 8 caracteres.", "error")
+      return
+    }
+
+    const { entregaId, entregaSeleccionada } = anulacionPendiente
+
+    setAccionGuardando(`anular-${entregaId}`)
 
     try {
       const anulacion = await anularComprobanteRpc({
         entregaId,
-        motivoAnulacion,
+        motivoAnulacion: motivo,
       })
       const stockPorProducto = new Map(
         anulacion.productos.map((producto) => [
@@ -1753,9 +1763,13 @@ function App() {
       setProductos(productosActualizados)
       setEntregas(entregasActualizadas)
       setMovimientos([...anulacion.movimientos, ...movimientos])
+      setAnulacionPendiente(null)
+      setMotivoAnulacion("")
       mostrarMensaje("Comprobante anulado y stock devuelto correctamente.", "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "anular el comprobante")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
@@ -1768,6 +1782,20 @@ function App() {
     if (!comprobanteAbierto) {
       mostrarMensaje("El navegador bloqueó la ventana del comprobante. Permite ventanas emergentes para esta app.")
     }
+  }
+
+  function resumirAuditoria(item) {
+    const detalle = item.detalle || {}
+    const nuevo = detalle.nuevo || {}
+    const anterior = detalle.anterior || {}
+    const nombre = nuevo.nombre || nuevo.nombre_completo || nuevo.producto || anterior.nombre || anterior.nombre_completo || anterior.producto
+    const identificador = nombre || item.registro_id || "-"
+
+    if (item.accion === "INSERT") return `Creó ${identificador}`
+    if (item.accion === "UPDATE") return `Actualizó ${identificador}`
+    if (item.accion === "DELETE") return `Eliminó ${identificador}`
+
+    return identificador
   }
 
 
@@ -1840,7 +1868,9 @@ function App() {
   }
 
   function exportarReporteEntregasFiltradas() {
-    exportarCsv("reporte-entregas-filtradas-msl.csv", [
+    exportarXlsx("reporte-entregas-filtradas-msl.xlsx", [{
+      nombre: "Entregas",
+      columnas: [
       { titulo: "Comprobante", campo: "numeroComprobante" },
       { titulo: "Fecha", campo: "fecha" },
       { titulo: "Colaborador", campo: "colaborador" },
@@ -1854,29 +1884,41 @@ function App() {
       { titulo: "Cantidad", campo: "cantidad" },
       { titulo: "Motivo", campo: "motivo" },
       { titulo: "Responsable", campo: "responsable" },
-    ], entregasReporte)
+      ],
+      filas: entregasReporte,
+    }])
   }
 
   function exportarReporteConsumoProductos() {
-    exportarCsv("reporte-consumo-productos-msl.csv", [
+    exportarXlsx("reporte-consumo-productos-msl.xlsx", [{
+      nombre: "Consumo",
+      columnas: [
       { titulo: "Producto", campo: "producto" },
       { titulo: "Variante", campo: "variante" },
       { titulo: "Categoría", campo: "categoria" },
       { titulo: "Unidad", campo: "unidad" },
       { titulo: "Cantidad", campo: "cantidad" },
-    ], productosReporte)
+      ],
+      filas: productosReporte,
+    }])
   }
 
   function exportarReporteCentros() {
-    exportarCsv("reporte-centros-costos-msl.csv", [
+    exportarXlsx("reporte-centros-costos-msl.xlsx", [{
+      nombre: "Centros",
+      columnas: [
       { titulo: "Centro de costos", campo: "codigo" },
       { titulo: "Nombre centro", campo: "centro" },
       { titulo: "Cantidad", campo: "cantidad" },
-    ], centrosReporte)
+      ],
+      filas: centrosReporte,
+    }])
   }
 
   function exportarReporteStockBajo() {
-    exportarCsv("reporte-stock-bajo-msl.csv", [
+    exportarXlsx("reporte-stock-bajo-msl.xlsx", [{
+      nombre: "Stock bajo",
+      columnas: [
       { titulo: "Producto", campo: "nombre" },
       { titulo: "Categoría", campo: "categoria" },
       { titulo: "Tipo", campo: "tipo" },
@@ -1886,7 +1928,63 @@ function App() {
       { titulo: "Stock Mínimo", campo: "stockMinimo" },
       { titulo: "Ubicación", campo: "ubicacion" },
       { titulo: "Estado", campo: "estado" },
-    ], productosStockBajo)
+      ],
+      filas: productosStockBajo,
+    }])
+  }
+
+  function exportarReporteCompletoExcel() {
+    exportarXlsx("reporte-inventario-msl.xlsx", [
+      {
+        nombre: "Entregas",
+        columnas: [
+          { titulo: "Comprobante", campo: "numeroComprobante" },
+          { titulo: "Fecha", campo: "fecha" },
+          { titulo: "Colaborador", campo: "colaborador" },
+          { titulo: "Identificación", campo: "identificacion" },
+          { titulo: "Centro de costos", campo: "centroCostos" },
+          { titulo: "Producto", campo: "producto" },
+          { titulo: "Categoría", campo: "categoria" },
+          { titulo: "Variante", campo: "variante" },
+          { titulo: "Unidad", campo: "unidad" },
+          { titulo: "Cantidad", campo: "cantidad" },
+          { titulo: "Estado", campo: "estado" },
+        ],
+        filas: entregasReporte,
+      },
+      {
+        nombre: "Consumo",
+        columnas: [
+          { titulo: "Producto", campo: "producto" },
+          { titulo: "Variante", campo: "variante" },
+          { titulo: "Categoría", campo: "categoria" },
+          { titulo: "Unidad", campo: "unidad" },
+          { titulo: "Cantidad", campo: "cantidad" },
+        ],
+        filas: productosReporte,
+      },
+      {
+        nombre: "Centros",
+        columnas: [
+          { titulo: "Centro de costos", campo: "codigo" },
+          { titulo: "Nombre centro", campo: "centro" },
+          { titulo: "Cantidad", campo: "cantidad" },
+        ],
+        filas: centrosReporte,
+      },
+      {
+        nombre: "Stock bajo",
+        columnas: [
+          { titulo: "Producto", campo: "nombre" },
+          { titulo: "Categoría", campo: "categoria" },
+          { titulo: "Variante", campo: "variante" },
+          { titulo: "Stock actual", campo: "stockActual" },
+          { titulo: "Stock mínimo", campo: "stockMinimo" },
+          { titulo: "Estado", campo: "estado" },
+        ],
+        filas: productosStockBajo,
+      },
+    ])
   }
 
   function exportarPerfiles() {
@@ -2014,233 +2112,51 @@ function App() {
   }
 
   return (
-    <main style={appShell}>
-      <aside style={sidebar}>
-        <img
-          src={assetUrl("logo-msl-blanco.png")}
-          alt="MSL Group"
-          style={sidebarLogo}
-        />
-
-        <nav style={sidebarNav}>
-          {pestanas.map(({ id, texto, icono: Icono }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPestanaActiva(id)}
-              style={sidebarButton(pestanaActiva === id)}
-            >
-              <Icono size={20} strokeWidth={2.4} />
-              {texto}
-            </button>
-          ))}
-        </nav>
-
-        <div style={sidebarFooter}>
-          <div style={sidebarUser}>
-            <span style={userAvatar}>
-              <Sparkles size={22} />
-            </span>
-            <span style={{ minWidth: 0 }}>
-              <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{perfil.nombre}</strong>
-              <span style={{ display: "block", color: "rgba(255,255,255,0.78)", fontSize: "12px" }}>{perfil.rol}</span>
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      <section style={contentShell}>
-        <header style={topBar}>
-          <div style={titleBlock}>
-            <h1 style={{ margin: 0, color: "#070b1d", fontSize: "32px", lineHeight: 1.1 }}>
-              Inventario Dotación y EPP
-            </h1>
-            <p style={{ margin: 0, color: "#5f6b85", fontWeight: 700 }}>
-              Mercadeo Sin Límites - Gestión Humana
-            </p>
-          </div>
-
-          <div style={userSummary}>
-            <span style={userAvatar}>
-              <UserRound size={22} />
-            </span>
-            <span style={{ textAlign: "left" }}>
-              <strong style={{ display: "block" }}>{perfil.nombre}</strong>
-              <span style={{ display: "block", color: "#5f6b85", fontSize: "13px" }}>{perfil.correo}</span>
-              <span style={{ display: "block", color: "#5f6b85", fontSize: "13px" }}>{perfil.rol}</span>
-            </span>
-            <button type="button" onClick={cerrarSesion} style={botonPrincipal}>
-              Cerrar Sesión
-              <LogOut size={18} />
-            </button>
-          </div>
-        </header>
-
-        <div style={dashboardGrid}>
-          {indicadoresPrincipales.map(renderIndicador)}
-        </div>
-
-        <nav style={barraPestanas}>
-          {pestanas
-            .filter(({ id }) => id !== "panel")
-            .map(({ id, texto }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setPestanaActiva(id)}
-                style={botonPestana(pestanaActiva === id)}
-              >
-                {texto}
-              </button>
-            ))}
-        </nav>
-          {mensaje && (
-            <div style={mensajeApp(mensaje.tipo)}>
-              <strong>{mensaje.texto}</strong>
-              <button type="button" onClick={() => setMensaje(null)} style={botonCerrarMensaje}>
-                Cerrar
-              </button>
-            </div>
-          )}
-
+    <LayoutInventario
+      assetUrl={assetUrl}
+      pestanas={pestanas}
+      pestanaActiva={pestanaActiva}
+      setPestanaActiva={setPestanaActiva}
+      perfil={perfil}
+      cerrarSesion={cerrarSesion}
+      indicadoresPrincipales={indicadoresPrincipales}
+      renderIndicador={renderIndicador}
+      mensaje={mensaje}
+      cerrarMensaje={() => setMensaje(null)}
+    >
           {pestanaActiva === "panel" && (
-            <>
-              <h2 style={{ marginTop: "34px" }}>Panel principal</h2>
-
-              <div style={dashboardGrid}>
-                {indicadoresPanel.map(renderIndicador)}
-              </div>
-
-              <div style={panelGrid}>
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Stock bajo</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>Stock</th>
-                        <th style={celdaTabla}>Mínimo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productosStockBajo.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Sin productos en stock bajo.</td>
-                        </tr>
-                      ) : (
-                        productosStockBajo.slice(0, 6).map((producto) => (
-                          <tr key={producto.id}>
-                            <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
-                            <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
-                            <td style={celdaTabla}>{producto.stockMinimo}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Más entregados este mes</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>Cantidad</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productosMasEntregados.length === 0 ? (
-                        <tr>
-                          <td colSpan="2" style={celdaTabla}>Sin entregas activas este mes.</td>
-                        </tr>
-                      ) : (
-                        productosMasEntregados.map((item) => (
-                          <tr key={`${item.producto}-${item.variante}`}>
-                            <td style={celdaTabla}>{item.producto} - {item.variante}</td>
-                            <td style={celdaTabla}>{item.cantidad} {item.unidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Entregas por centro de costos</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>Ítems</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entregasPorCentroCostos.length === 0 ? (
-                        <tr>
-                          <td colSpan="2" style={celdaTabla}>Sin entregas activas este mes.</td>
-                        </tr>
-                      ) : (
-                        entregasPorCentroCostos.map((item) => (
-                          <tr key={`${item.codigo}-${item.centro}`}>
-                            <td style={celdaTabla}>{item.centro}</td>
-                            <td style={celdaTabla}>{item.cantidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Entregas recientes</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Fecha</th>
-                        <th style={celdaTabla}>Colaborador</th>
-                        <th style={celdaTabla}>Producto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entregasRecientes.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Todavía no hay entregas registradas.</td>
-                        </tr>
-                      ) : (
-                        entregasRecientes.map((item) => (
-                          <tr key={item.id} style={item.estado === "Anulada" ? filaAnulada : undefined}>
-                            <td style={celdaTabla}>{item.fecha}</td>
-                            <td style={celdaTabla}>{item.colaborador}</td>
-                            <td style={celdaTabla}>{item.producto} - {item.variante}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-              </div>
-            </>
+            <PanelPrincipal
+              indicadoresPanel={indicadoresPanel}
+              renderIndicador={renderIndicador}
+              productosStockBajo={productosStockBajo}
+              productosMasEntregados={productosMasEntregados}
+              entregasPorCentroCostos={entregasPorCentroCostos}
+              entregasRecientes={entregasRecientes}
+            />
           )}
 
           {pestanaActiva === "reportes" && (
             <>
               <div style={accionesModulo}>
+                <button type="button" onClick={exportarReporteCompletoExcel} style={botonPrincipal}>
+                  <Download size={18} />
+                  Exportar reporte Excel
+                </button>
                 <button type="button" onClick={exportarReporteEntregasFiltradas} style={botonSecundario}>
                   <Download size={18} />
-                  Exportar entregas filtradas
+                  Entregas XLSX
                 </button>
                 <button type="button" onClick={exportarReporteConsumoProductos} style={botonSecundario}>
                   <Download size={18} />
-                  Exportar consumo por producto
+                  Consumo XLSX
                 </button>
                 <button type="button" onClick={exportarReporteCentros} style={botonSecundario}>
                   <Download size={18} />
-                  Exportar centros
+                  Centros XLSX
                 </button>
                 <button type="button" onClick={exportarReporteStockBajo} style={botonSecundario}>
                   <Download size={18} />
-                  Exportar stock bajo
+                  Stock bajo XLSX
                 </button>
               </div>
 
@@ -2481,9 +2397,9 @@ function App() {
                 </Campo>
 
                 <div style={filaBotones}>
-                  <button style={botonPrincipal}>
+                  <button disabled={estaGuardando("perfil")} style={botonPrincipal}>
                     <Users size={18} />
-                    {perfilEditandoId ? "Guardar perfil" : "Registrar perfil"}
+                    {estaGuardando("perfil") ? "Guardando..." : perfilEditandoId ? "Guardar perfil" : "Registrar perfil"}
                   </button>
                   {perfilEditandoId && (
                     <button type="button" onClick={cancelarEdicionPerfil} style={botonSecundario}>
@@ -2536,12 +2452,55 @@ function App() {
                           <button type="button" onClick={() => prepararEdicionPerfil(item)} style={botonEditar}>
                             Editar
                           </button>
-                          <button type="button" onClick={() => cambiarEstadoPerfil(item)} style={botonEliminar}>
-                            {item.estado === "Activo" ? "Inactivar" : "Activar"}
+                          <button type="button" disabled={estaGuardando(`perfil-${item.id}`)} onClick={() => cambiarEstadoPerfil(item)} style={botonEliminar}>
+                            {estaGuardando(`perfil-${item.id}`) ? "Guardando..." : item.estado === "Activo" ? "Inactivar" : "Activar"}
                           </button>
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {pestanaActiva === "auditoria" && esAdministrador && (
+            <>
+              <h2 style={{ marginTop: "34px" }}>Auditoría</h2>
+
+              <p style={ayudaFormulario}>
+                Últimos 200 cambios registrados por los triggers de Supabase.
+              </p>
+
+              <table style={tabla}>
+                <thead>
+                  <tr style={encabezadoTabla}>
+                    <th style={celdaTabla}>Fecha</th>
+                    <th style={celdaTabla}>Usuario</th>
+                    <th style={celdaTabla}>Acción</th>
+                    <th style={celdaTabla}>Tabla</th>
+                    <th style={celdaTabla}>Resumen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditoria.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={celdaTabla}>Todavía no hay registros de auditoría visibles.</td>
+                    </tr>
+                  ) : (
+                    auditoria.map((item) => {
+                      const usuario = perfilesPorId.get(item.usuario_id)
+
+                      return (
+                        <tr key={item.id}>
+                          <td style={celdaTabla}>{String(item.creado_en || "").slice(0, 19).replace("T", " ")}</td>
+                          <td style={celdaTabla}>{usuario?.nombre || item.usuario_id || "Sistema"}</td>
+                          <td style={celdaTabla}>{item.accion}</td>
+                          <td style={celdaTabla}>{item.tabla}</td>
+                          <td style={celdaTabla}>{resumirAuditoria(item)}</td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -2602,9 +2561,9 @@ function App() {
                   <input type="number" min="0" value={itemCatalogo.stockMinimo} onChange={(e) => actualizarItemCatalogo("stockMinimo", e.target.value)} required style={campoFormulario} />
                 </Campo>
 
-                <button style={botonPrincipal}>
+                <button disabled={estaGuardando("catalogo")} style={botonPrincipal}>
                   <Plus size={18} />
-                  {itemCatalogoEditandoClave ? "Guardar cambios del item" : "Guardar item nuevo"}
+                  {estaGuardando("catalogo") ? "Guardando..." : itemCatalogoEditandoClave ? "Guardar cambios del item" : "Guardar item nuevo"}
                 </button>
                 {itemCatalogoEditandoClave && (
                   <button type="button" onClick={cancelarEdicionItemCatalogo} style={botonSecundario}>
@@ -2774,9 +2733,9 @@ function App() {
             </Campo>
 
             <div style={filaBotones}>
-              <button style={botonPrincipal}>
+              <button disabled={estaGuardando("producto")} style={botonPrincipal}>
                 <Package size={18} />
-                {productoEditandoId ? "Guardar cambios" : "Registrar producto"}
+                {estaGuardando("producto") ? "Guardando..." : productoEditandoId ? "Guardar cambios" : "Registrar producto"}
               </button>
               {productoEditandoId && (
                 <button type="button" onClick={cancelarEdicionProducto} style={botonSecundario}>
@@ -2906,10 +2865,10 @@ function App() {
               <input value={movimiento.observacion} onChange={(e) => actualizarMovimiento("observacion", e.target.value)} placeholder="Ej: factura, devolución de colaborador o justificación del ajuste" style={campoFormulario} />
             </Campo>
 
-            <button style={botonPrincipal}>
-              <ArrowLeftRight size={18} />
-              Registrar movimiento
-            </button>
+              <button disabled={estaGuardando("movimiento")} style={botonPrincipal}>
+                <ArrowLeftRight size={18} />
+                {estaGuardando("movimiento") ? "Guardando..." : "Registrar movimiento"}
+              </button>
           </form>
             </>
           ) : (
@@ -3138,9 +3097,9 @@ function App() {
             </Campo>
 
             <div style={filaBotones}>
-              <button style={botonPrincipal}>
+              <button disabled={estaGuardando("colaborador")} style={botonPrincipal}>
                 <Users size={18} />
-                {colaboradorEditandoId ? "Guardar colaborador" : "Registrar colaborador"}
+                {estaGuardando("colaborador") ? "Guardando..." : colaboradorEditandoId ? "Guardar colaborador" : "Registrar colaborador"}
               </button>
               {colaboradorEditandoId && (
                 <button type="button" onClick={cancelarEdicionColaborador} style={botonSecundario}>
@@ -3342,9 +3301,9 @@ function App() {
               <input value={entrega.observacion} onChange={(e) => actualizarEntrega("observacion", e.target.value)} placeholder="Ej: Entrega inicial, reposición autorizada" style={campoFormulario} />
             </Campo>
 
-            <button style={botonPrincipal}>
+            <button disabled={estaGuardando("entrega")} style={botonPrincipal}>
               <ClipboardCheck size={18} />
-              Registrar entrega completa
+              {estaGuardando("entrega") ? "Guardando..." : "Registrar entrega completa"}
             </button>
           </form>
             </>
@@ -3452,6 +3411,8 @@ function App() {
             ))}
           </div>
 
+          <h3 style={{ marginTop: "24px" }}>Comprobantes</h3>
+
           <table style={tabla}>
             <thead>
               <tr style={encabezadoTabla}>
@@ -3471,37 +3432,122 @@ function App() {
                   <td colSpan="8" style={celdaTabla}>No hay comprobantes que coincidan con la búsqueda.</td>
                 </tr>
               ) : (
-                comprobantesFiltrados.map((comprobante) => (
-                  <tr key={comprobante.id} style={comprobante.estado === "Anulada" ? filaAnulada : undefined}>
-                    <td style={celdaTabla}>{comprobante.numero}</td>
-                    <td style={celdaTabla}>{comprobante.fecha}</td>
-                    <td style={celdaTabla}>{comprobante.colaborador}</td>
-                    <td style={celdaTabla}>{comprobante.centroCostos}</td>
-                    <td style={celdaTabla}>{comprobante.lineas.length}</td>
-                    <td style={celdaTabla}>{comprobante.totalItems}</td>
-                    <td style={celdaTabla}>{comprobante.estado}</td>
-                    <td style={celdaTabla}>
-                      <button onClick={() => abrirComprobante(comprobante.primeraLinea)} style={botonEditar}>
-                        Comprobante
-                      </button>
+                comprobantesFiltrados.map((comprobante) => {
+                  const primeraLinea = comprobante.lineas[0]
+                  const expandido = comprobanteExpandidoId === comprobante.id
 
-                      {puedeGestionarEntregas && comprobante.estado === "Activa" ? (
-                        <button onClick={() => anularEntrega(comprobante.primeraLinea.id)} style={botonEliminar}>
-                          Anular comprobante
+                  return (
+                    <tr key={comprobante.id} style={comprobante.estado === "Anulada" ? filaAnulada : undefined}>
+                      <td style={celdaTabla}>{comprobante.numero}</td>
+                      <td style={celdaTabla}>{comprobante.fecha}</td>
+                      <td style={celdaTabla}>{comprobante.colaborador}</td>
+                      <td style={celdaTabla}>{comprobante.centroCostos}</td>
+                      <td style={celdaTabla}>
+                        <button
+                          type="button"
+                          onClick={() => setComprobanteExpandidoId(expandido ? "" : comprobante.id)}
+                          style={botonEditar}
+                        >
+                          {expandido ? "Ocultar" : "Ver"} {comprobante.lineas.length}
                         </button>
-                      ) : (
-                        comprobante.motivoAnulacion || "-"
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td style={celdaTabla}>{comprobante.totalItems}</td>
+                      <td style={celdaTabla}>{comprobante.estado}</td>
+                      <td style={celdaTabla}>
+                        <button type="button" onClick={() => abrirComprobante(primeraLinea)} style={botonEditar}>
+                          Comprobante
+                        </button>
+                        {puedeGestionarEntregas && comprobante.estado === "Activa" ? (
+                          <button disabled={estaGuardando(`anular-${primeraLinea.id}`)} onClick={() => anularEntrega(primeraLinea.id)} style={botonEliminar}>
+                            {estaGuardando(`anular-${primeraLinea.id}`) ? "Anulando..." : "Anular"}
+                          </button>
+                        ) : (
+                          comprobante.motivoAnulacion || "-"
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
+
+          {comprobanteExpandidoId && (
+            <section style={resumenLineasEntrega}>
+              <strong>Detalle del comprobante</strong>
+              <table style={tabla}>
+                <thead>
+                  <tr style={encabezadoTabla}>
+                    <th style={celdaTabla}>Producto</th>
+                    <th style={celdaTabla}>Variante</th>
+                    <th style={celdaTabla}>Cantidad</th>
+                    <th style={celdaTabla}>Motivo</th>
+                    <th style={celdaTabla}>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(comprobantesFiltrados.find((item) => item.id === comprobanteExpandidoId)?.lineas || []).map((item) => (
+                    <tr key={item.id} style={item.estado === "Anulada" ? filaAnulada : undefined}>
+                      <td style={celdaTabla}>{item.producto}</td>
+                      <td style={celdaTabla}>{item.variante}</td>
+                      <td style={celdaTabla}>{item.cantidad} {item.unidad}</td>
+                      <td style={celdaTabla}>{item.motivo}</td>
+                      <td style={celdaTabla}>{item.estado || "Activa"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
             </>
           )}
-      </section>
-    </main>
+
+          {anulacionPendiente && (
+            <div style={modalBackdrop} role="dialog" aria-modal="true" aria-labelledby="titulo-anulacion">
+              <form onSubmit={confirmarAnulacion} style={modalPanel}>
+                <h2 id="titulo-anulacion" style={{ margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                  <ShieldAlert size={24} />
+                  Anular comprobante
+                </h2>
+                <div style={modalResumen}>
+                  <strong>{anulacionPendiente.entregaSeleccionada.numeroComprobante || anulacionPendiente.entregaSeleccionada.id}</strong>
+                  <span>Se anularán {anulacionPendiente.lineas.length} líneas activas.</span>
+                  <span>Se devolverán {anulacionPendiente.totalDevuelto} ítems al stock.</span>
+                </div>
+                <Campo texto="Motivo de anulación">
+                  <textarea
+                    value={motivoAnulacion}
+                    onChange={(e) => setMotivoAnulacion(e.target.value)}
+                    placeholder="Escribe un motivo claro"
+                    required
+                    minLength={8}
+                    style={{ ...campoFormulario, minHeight: "104px", resize: "vertical" }}
+                  />
+                </Campo>
+                <div style={modalAcciones}>
+                  <button
+                    type="button"
+                    onClick={cancelarAnulacion}
+                    disabled={estaGuardando(`anular-${anulacionPendiente.entregaId}`)}
+                    style={botonSecundario}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={
+                      estaGuardando(`anular-${anulacionPendiente.entregaId}`) ||
+                      motivoAnulacion.trim().length < 8
+                    }
+                    style={botonEliminar}
+                  >
+                    {estaGuardando(`anular-${anulacionPendiente.entregaId}`) ? "Anulando..." : "Confirmar anulación"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+    </LayoutInventario>
   )
 }
 
