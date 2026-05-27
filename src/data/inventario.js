@@ -21,7 +21,7 @@ export const catalogoProductosBase = [
   { categoria: "Dotación", nombre: "Chaleco Home Center", tipo: "Chaleco", unidad: "Unidad", variantes: ["S", "M", "L", "XL"] },
   { categoria: "Dotación", nombre: "Bota de seguridad", tipo: "Calzado", unidad: "Par", variantes: ["35", "36", "37", "38", "39", "40", "41", "42", "43"] },
   { categoria: "Dotación", nombre: "Bono Sodexo", tipo: "Bono", unidad: "Bono", variantes: ["unica"] },
-  { categoria: "EPP", nombre: "Guantes de nitrilo", tipo: "Proteccion manos", unidad: "Caja", variantes: ["S", "M", "L", "XL"] },
+  { categoria: "EPP", nombre: "Guantes de nitrilo", tipo: "Proteccion manos", unidad: "Caja", variantes: ["S", "M", "L", "XL" , "XXL"] },
   { categoria: "EPP", nombre: "Casco", tipo: "Proteccion cabeza", unidad: "Unidad", variantes: ["Blanco", "Azul", "Amarillo"] },
   { categoria: "EPP", nombre: "Gafas de seguridad", tipo: "Proteccion visual", unidad: "Unidad", variantes: ["Claras", "Oscuras"] },
   { categoria: "EPP", nombre: "Tapabocas quirurgico", tipo: "Proteccion respiratoria", unidad: "Caja", variantes: ["unica"] },
