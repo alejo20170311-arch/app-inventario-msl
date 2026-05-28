@@ -233,7 +233,7 @@ begin
   where id = v_usuario_id
     and estado = 'Activo';
 
-  if v_rol not in ('Administrador', 'Bodega') then
+  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
     raise exception 'No tienes permiso para modificar el catálogo.';
   end if;
 
@@ -423,7 +423,7 @@ begin
     raise exception 'El usuario no tiene perfil activo.';
   end if;
 
-  if v_rol not in ('Administrador', 'Bodega') then
+  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
     raise exception 'No tienes permiso para modificar inventario.';
   end if;
 
@@ -1101,12 +1101,13 @@ to authenticated
 using (true);
 
 drop policy if exists "catalogo admin y bodega modifican" on public.catalogo_productos;
-create policy "catalogo admin y bodega modifican"
+drop policy if exists "catalogo admin gh bodega modifican" on public.catalogo_productos;
+create policy "catalogo admin gh bodega modifican"
 on public.catalogo_productos
 for all
 to authenticated
-using (public.rol_usuario() in ('Administrador', 'Bodega'))
-with check (public.rol_usuario() in ('Administrador', 'Bodega'));
+using (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'))
+with check (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'));
 
 drop policy if exists "productos lectura autenticados" on public.productos;
 create policy "productos lectura autenticados"
@@ -1116,12 +1117,13 @@ to authenticated
 using (true);
 
 drop policy if exists "productos admin y bodega modifican" on public.productos;
-create policy "productos admin y bodega modifican"
+drop policy if exists "productos admin gh bodega modifican" on public.productos;
+create policy "productos admin gh bodega modifican"
 on public.productos
 for all
 to authenticated
-using (public.rol_usuario() in ('Administrador', 'Bodega'))
-with check (public.rol_usuario() in ('Administrador', 'Bodega'));
+using (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'))
+with check (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'));
 
 drop policy if exists "colaboradores lectura autenticados" on public.colaboradores;
 create policy "colaboradores lectura autenticados"

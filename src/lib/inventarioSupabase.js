@@ -215,7 +215,11 @@ async function cargarCatalogoProductos() {
   if (error) throw error
 
   if (data.length > 0) {
-    return data.map(catalogoDesdeSupabase)
+    const catalogoBaseEpp = catalogoProductosBase.filter((item) => item.categoria === "EPP")
+    const catalogoSupabase = data.map(catalogoDesdeSupabase)
+    const catalogoDotacion = catalogoSupabase.filter((item) => item.categoria !== "EPP")
+
+    return [...catalogoDotacion, ...catalogoBaseEpp]
   }
 
   const semillas = catalogoProductosBase.map(catalogoParaSupabase)

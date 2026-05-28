@@ -93,6 +93,52 @@ export const userSummary = {
   justifyContent: "flex-end",
 }
 
+export const accountMenuWrap = {
+  position: "relative",
+  display: "inline-flex",
+}
+
+export const accountMenuButton = {
+  width: "42px",
+  height: "42px",
+  display: "grid",
+  placeItems: "center",
+  background: "#ffffff",
+  color: azul,
+  border: `1px solid ${borde}`,
+  borderRadius: "8px",
+  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+}
+
+export const accountMenu = {
+  position: "absolute",
+  right: 0,
+  top: "48px",
+  zIndex: 30,
+  minWidth: "210px",
+  display: "grid",
+  gap: "4px",
+  padding: "8px",
+  background: "#ffffff",
+  border: `1px solid ${borde}`,
+  borderRadius: "8px",
+  boxShadow: "0 18px 44px rgba(15, 23, 42, 0.18)",
+}
+
+export const accountMenuItem = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  width: "100%",
+  padding: "10px 12px",
+  background: "transparent",
+  color: texto,
+  border: "none",
+  borderRadius: "6px",
+  fontWeight: 800,
+  textAlign: "left",
+}
+
 export const userAvatar = {
   width: "44px",
   height: "44px",
@@ -102,6 +148,13 @@ export const userAvatar = {
   background: "#050505",
   color: "#ffffff",
   flex: "0 0 auto",
+}
+
+export const avatarImage = {
+  width: "100%",
+  height: "100%",
+  borderRadius: "50%",
+  objectFit: "cover",
 }
 
 export const gridFormulario = {
@@ -133,6 +186,64 @@ export const panelBloque = {
   padding: "20px",
   overflowX: "auto",
   boxShadow: sombra,
+}
+
+export const graficoBarras = {
+  display: "grid",
+  gap: "12px",
+  marginTop: "14px",
+}
+
+export const filaGrafico = {
+  display: "grid",
+  gridTemplateColumns: "minmax(120px, 1.1fr) minmax(180px, 2fr) auto",
+  gap: "10px",
+  alignItems: "center",
+  fontSize: "13px",
+}
+
+export const etiquetaGrafico = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontWeight: 800,
+}
+
+export const pistaGrafico = {
+  height: "14px",
+  overflow: "hidden",
+  background: "#eef3ff",
+  borderRadius: "999px",
+}
+
+export function barraGrafico(color = azul) {
+  return {
+    display: "block",
+    height: "100%",
+    minWidth: "4px",
+    background: color,
+    borderRadius: "999px",
+  }
+}
+
+export const valorGrafico = {
+  minWidth: "58px",
+  textAlign: "right",
+  fontWeight: 900,
+}
+
+export const pedidoResumen = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: "12px",
+  marginTop: "14px",
+}
+
+export const pedidoDato = {
+  padding: "12px",
+  border: `1px solid ${borde}`,
+  borderRadius: "8px",
+  background: azulSuave,
 }
 
 export const campoFormulario = {

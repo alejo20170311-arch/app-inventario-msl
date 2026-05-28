@@ -1,11 +1,15 @@
-import { LogOut, Sparkles, UserRound } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Camera, KeyRound, LogOut, Settings, Sparkles, UserRound } from "lucide-react"
 
 import {
+  accountMenu,
+  accountMenuButton,
+  accountMenuItem,
+  accountMenuWrap,
   appShell,
   barraPestanas,
   botonCerrarMensaje,
   botonPestana,
-  botonPrincipal,
   contentShell,
   dashboardGrid,
   mensajeApp,
@@ -27,29 +31,51 @@ export function LayoutInventario({
   pestanaActiva,
   setPestanaActiva,
   perfil,
+  avatarUrl,
   cerrarSesion,
+  abrirCambioContrasena,
+  cambiarFotoPerfil,
   indicadoresPrincipales,
   renderIndicador,
   mensaje,
   cerrarMensaje,
   children,
 }) {
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const [esMovil, setEsMovil] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)")
+    const actualizar = () => setEsMovil(media.matches)
+
+    actualizar()
+    media.addEventListener("change", actualizar)
+
+    return () => media.removeEventListener("change", actualizar)
+  }, [])
+
+  const avatar = avatarUrl ? (
+    <img src={avatarUrl} alt={perfil.nombre} style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+  ) : (
+    <UserRound size={22} />
+  )
+
   return (
-    <main style={appShell}>
-      <aside style={sidebar}>
+    <main style={esMovil ? { ...appShell, display: "block" } : appShell}>
+      <aside style={esMovil ? { ...sidebar, position: "relative", height: "auto", padding: "18px", gap: "14px" } : sidebar}>
         <img
           src={assetUrl("logo-msl-blanco.png")}
           alt="MSL Group"
-          style={sidebarLogo}
+          style={esMovil ? { ...sidebarLogo, margin: 0, width: "118px" } : sidebarLogo}
         />
 
-        <nav style={sidebarNav}>
+        <nav style={esMovil ? { ...sidebarNav, display: "flex", overflowX: "auto", paddingBottom: "4px" } : sidebarNav}>
           {pestanas.map(({ id, texto, icono: Icono }) => (
             <button
               key={id}
               type="button"
               onClick={() => setPestanaActiva(id)}
-              style={sidebarButton(pestanaActiva === id)}
+              style={esMovil ? { ...sidebarButton(pestanaActiva === id), flex: "0 0 auto" } : sidebarButton(pestanaActiva === id)}
             >
               <Icono size={20} strokeWidth={2.4} />
               {texto}
@@ -70,8 +96,8 @@ export function LayoutInventario({
         </div>
       </aside>
 
-      <section style={contentShell}>
-        <header style={topBar}>
+      <section style={esMovil ? { ...contentShell, padding: "18px" } : contentShell}>
+        <header style={esMovil ? { ...topBar, display: "grid", alignItems: "start" } : topBar}>
           <div style={titleBlock}>
             <h1 style={{ margin: 0, color: "#070b1d", fontSize: "32px", lineHeight: 1.1 }}>
               Inventario Dotación y EPP
@@ -81,19 +107,65 @@ export function LayoutInventario({
             </p>
           </div>
 
-          <div style={userSummary}>
+          <div style={esMovil ? { ...userSummary, justifyContent: "space-between" } : userSummary}>
             <span style={userAvatar}>
-              <UserRound size={22} />
+              {avatar}
             </span>
             <span style={{ textAlign: "left" }}>
               <strong style={{ display: "block" }}>{perfil.nombre}</strong>
               <span style={{ display: "block", color: "#5f6b85", fontSize: "13px" }}>{perfil.correo}</span>
               <span style={{ display: "block", color: "#5f6b85", fontSize: "13px" }}>{perfil.rol}</span>
             </span>
-            <button type="button" onClick={cerrarSesion} style={botonPrincipal}>
-              Cerrar Sesión
-              <LogOut size={18} />
-            </button>
+            <div style={accountMenuWrap}>
+              <button
+                type="button"
+                onClick={() => setMenuAbierto(!menuAbierto)}
+                style={accountMenuButton}
+                aria-label="Opciones de cuenta"
+              >
+                <Settings size={20} />
+              </button>
+              {menuAbierto && (
+                <div style={accountMenu}>
+                  <label style={accountMenuItem}>
+                    <Camera size={17} />
+                    Cambiar foto
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        cambiarFotoPerfil(e.target.files?.[0])
+                        e.target.value = ""
+                        setMenuAbierto(false)
+                      }}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      abrirCambioContrasena()
+                      setMenuAbierto(false)
+                    }}
+                    style={accountMenuItem}
+                  >
+                    <KeyRound size={17} />
+                    Cambiar clave
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cerrarSesion()
+                      setMenuAbierto(false)
+                    }}
+                    style={accountMenuItem}
+                  >
+                    <LogOut size={17} />
+                    Cerrar sesión
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

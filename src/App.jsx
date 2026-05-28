@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Download,
   Home,
+  KeyRound,
   Package,
   Plus,
   ShieldAlert,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { Campo } from "./components/Campo"
+import { GraficoBarras } from "./components/GraficoBarras"
 import { LayoutInventario } from "./components/LayoutInventario"
 import { ListaBuscable } from "./components/ListaBuscable"
 import { PantallaCarga, PantallaLogin } from "./components/PantallasSesion"
@@ -151,6 +153,12 @@ function App() {
   const [anulacionPendiente, setAnulacionPendiente] = useState(null)
   const [motivoAnulacion, setMotivoAnulacion] = useState("")
   const [comprobanteExpandidoId, setComprobanteExpandidoId] = useState("")
+  const [categoriaPedido, setCategoriaPedido] = useState("EPP")
+  const [mostrarCambioContrasena, setMostrarCambioContrasena] = useState(false)
+  const [formularioContrasena, setFormularioContrasena] = useState({
+    nueva: "",
+    confirmar: "",
+  })
   const [perfilEditandoId, setPerfilEditandoId] = useState(null)
   const [perfilFormulario, setPerfilFormulario] = useState({
     id: "",
@@ -605,6 +613,28 @@ function App() {
       return acumulado
     }, {})
   ).sort((a, b) => b.cantidad - a.cantidad)
+  const productosReporteGrafico = productosReporte.slice(0, 8).map((item) => ({
+    ...item,
+    etiqueta: `${item.producto} - ${item.variante}`,
+  }))
+  const centrosReporteGrafico = centrosReporte.slice(0, 8)
+  const colaboradoresReporteGrafico = colaboradoresReporte.slice(0, 8)
+  const productosStockBajoReporte = productosStockBajo.filter((producto) => {
+    if (filtrosReporte.categoria === "Todas") return true
+
+    return producto.categoria === filtrosReporte.categoria
+  })
+  const productosPedidoAutomatico = productos
+    .filter((producto) =>
+      producto.categoria === categoriaPedido &&
+      producto.estado === "Activo" &&
+      Number(producto.stockActual) <= Number(producto.stockMinimo)
+    )
+    .map((producto) => ({
+      ...producto,
+      cantidadSugerida: Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
+    }))
+    .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
   const estadosPerfil = ["Activo", "Inactivo"]
@@ -643,8 +673,8 @@ function App() {
     })),
   ]
   const esAdministrador = perfil?.rol === "Administrador"
-  const puedeGestionarProductos = ["Administrador", "Bodega"].includes(perfil?.rol)
-  const puedeGestionarMovimientos = ["Administrador", "Bodega"].includes(perfil?.rol)
+  const puedeGestionarProductos = ["Administrador", "Gestion Humana", "Bodega"].includes(perfil?.rol)
+  const puedeGestionarMovimientos = ["Administrador", "Gestion Humana", "Bodega"].includes(perfil?.rol)
   const puedeGestionarColaboradores = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
   const puedeGestionarEntregas = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
   const perfilesFiltrados = perfiles.filter((item) => {
@@ -894,6 +924,100 @@ function App() {
     setAuditoria([])
     setPestanaActiva("panel")
     mostrarMensaje("Sesión cerrada correctamente.", "exito")
+  }
+
+  async function cambiarContrasena(evento) {
+    evento.preventDefault()
+
+    if (accionGuardando) return
+
+    const nueva = formularioContrasena.nueva.trim()
+    const confirmar = formularioContrasena.confirmar.trim()
+
+    if (nueva.length < 6) {
+      mostrarMensaje("La nueva contraseña debe tener al menos 6 caracteres.", "error")
+      return
+    }
+
+    if (nueva !== confirmar) {
+      mostrarMensaje("Las contraseñas no coinciden.", "error")
+      return
+    }
+
+    setAccionGuardando("contrasena")
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({ password: nueva })
+
+      if (error) throw error
+
+      setSesion((actual) => actual ? { ...actual, user: data.user } : actual)
+      setFormularioContrasena({ nueva: "", confirmar: "" })
+      setMostrarCambioContrasena(false)
+      mostrarMensaje("Contraseña actualizada correctamente.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "actualizar la contraseña")
+    } finally {
+      setAccionGuardando("")
+    }
+  }
+
+  function imagenPerfilReducida(archivo) {
+    return new Promise((resolve, reject) => {
+      const imagen = new Image()
+      const url = URL.createObjectURL(archivo)
+
+      imagen.onload = () => {
+        const lado = 180
+        const lienzo = document.createElement("canvas")
+        const contexto = lienzo.getContext("2d")
+        const escala = Math.max(lado / imagen.width, lado / imagen.height)
+        const ancho = imagen.width * escala
+        const alto = imagen.height * escala
+
+        lienzo.width = lado
+        lienzo.height = lado
+        contexto.drawImage(imagen, (lado - ancho) / 2, (lado - alto) / 2, ancho, alto)
+        URL.revokeObjectURL(url)
+        resolve(lienzo.toDataURL("image/jpeg", 0.82))
+      }
+
+      imagen.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error("No se pudo leer la imagen."))
+      }
+
+      imagen.src = url
+    })
+  }
+
+  async function cambiarFotoPerfil(archivo) {
+    if (!archivo || accionGuardando) return
+
+    if (!archivo.type.startsWith("image/")) {
+      mostrarMensaje("Selecciona una imagen válida para la foto de perfil.", "error")
+      return
+    }
+
+    setAccionGuardando("foto-perfil")
+
+    try {
+      const avatarUrl = await imagenPerfilReducida(archivo)
+      const metadata = {
+        ...(sesion?.user?.user_metadata || {}),
+        avatar_url: avatarUrl,
+      }
+      const { data, error } = await supabase.auth.updateUser({ data: metadata })
+
+      if (error) throw error
+
+      setSesion((actual) => actual ? { ...actual, user: data.user } : actual)
+      mostrarMensaje("Foto de perfil actualizada.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "actualizar la foto de perfil")
+    } finally {
+      setAccionGuardando("")
+    }
   }
 
   function actualizarFiltroReporte(campo, valor) {
@@ -2155,7 +2279,10 @@ function App() {
       pestanaActiva={pestanaActiva}
       setPestanaActiva={setPestanaActiva}
       perfil={perfil}
+      avatarUrl={sesion?.user?.user_metadata?.avatar_url}
       cerrarSesion={cerrarSesion}
+      abrirCambioContrasena={() => setMostrarCambioContrasena(true)}
+      cambiarFotoPerfil={cambiarFotoPerfil}
       indicadoresPrincipales={indicadoresPrincipales}
       renderIndicador={renderIndicador}
       mensaje={mensaje}
@@ -2220,13 +2347,14 @@ function App() {
                   </Campo>
 
                   <Campo texto="Categoría">
-                    <ListaBuscable
-                      value={filtrosReporte.categoria}
-                      onChange={(valor) => actualizarFiltroReporte("categoria", valor || "Todas")}
-                      options={["Todas", ...categoriasDisponibles]}
-                      placeholder="Todas"
-                      style={campoFormulario}
-                    />
+                  <ListaBuscable
+                    value={filtrosReporte.categoria}
+                    onChange={(valor) => actualizarFiltroReporte("categoria", valor || "Todas")}
+                    options={["Todas", ...categoriasDisponibles]}
+                    placeholder="Todas"
+                    soloLista
+                    style={campoFormulario}
+                  />
                   </Campo>
 
                   <Campo texto="Estado">
@@ -2267,6 +2395,78 @@ function App() {
                   <strong>Productos en stock bajo</strong>
                   <h2>{productosStockBajo.length}</h2>
                 </div>
+              </div>
+
+              <div style={panelGrid}>
+                <section style={panelBloque}>
+                  <h3 style={{ marginTop: 0 }}>Gráfico de consumo por producto</h3>
+                  <GraficoBarras
+                    datos={productosReporteGrafico}
+                    etiqueta="etiqueta"
+                    valor="cantidad"
+                    color="#0100FE"
+                  />
+                </section>
+
+                <section style={panelBloque}>
+                  <h3 style={{ marginTop: 0 }}>Gráfico por centro de costos</h3>
+                  <GraficoBarras
+                    datos={centrosReporteGrafico}
+                    etiqueta="centro"
+                    valor="cantidad"
+                    color="#008a4c"
+                  />
+                </section>
+
+                <section style={panelBloque}>
+                  <h3 style={{ marginTop: 0 }}>Colaboradores con más entregas</h3>
+                  <GraficoBarras
+                    datos={colaboradoresReporteGrafico}
+                    etiqueta="colaborador"
+                    valor="cantidad"
+                    color="#050505"
+                  />
+                </section>
+
+                <section style={panelBloque}>
+                  <h3 style={{ marginTop: 0 }}>Pedido automático por stock bajo</h3>
+                  <Campo texto="Categoría del pedido">
+                    <ListaBuscable
+                      value={categoriaPedido}
+                      onChange={(valor) => setCategoriaPedido(valor || "EPP")}
+                      options={categoriasDisponibles}
+                      soloLista
+                      style={campoFormulario}
+                    />
+                  </Campo>
+
+                  <table style={tabla}>
+                    <thead>
+                      <tr style={encabezadoTabla}>
+                        <th style={celdaTabla}>Producto</th>
+                        <th style={celdaTabla}>Stock</th>
+                        <th style={celdaTabla}>Mínimo</th>
+                        <th style={celdaTabla}>Pedido sugerido</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productosPedidoAutomatico.length === 0 ? (
+                        <tr>
+                          <td colSpan="4" style={celdaTabla}>No hay productos de {categoriaPedido} por pedir.</td>
+                        </tr>
+                      ) : (
+                        productosPedidoAutomatico.map((producto) => (
+                          <tr key={producto.id}>
+                            <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
+                            <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
+                            <td style={celdaTabla}>{producto.stockMinimo}</td>
+                            <td style={celdaTabla}>{producto.cantidadSugerida} {producto.unidad}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </section>
               </div>
 
               <div style={panelGrid}>
@@ -2365,12 +2565,12 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {productosStockBajo.length === 0 ? (
+                      {productosStockBajoReporte.length === 0 ? (
                         <tr>
                           <td colSpan="3" style={celdaTabla}>Sin productos en stock bajo.</td>
                         </tr>
                       ) : (
-                        productosStockBajo.map((producto) => (
+                        productosStockBajoReporte.map((producto) => (
                           <tr key={producto.id}>
                             <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
                             <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
@@ -2576,6 +2776,7 @@ function App() {
                     value={itemCatalogo.categoria}
                     onChange={(valor) => actualizarItemCatalogo("categoria", valor || "Dotación")}
                     options={categoriasDisponibles}
+                    soloLista
                     style={campoFormulario}
                   />
                 </Campo>
@@ -2678,6 +2879,7 @@ function App() {
                 value={formulario.categoria}
                 onChange={(valor) => actualizarCampo("categoria", valor || "Dotación")}
                 options={categoriasDisponibles}
+                soloLista
                 disabled={productoEditandoTieneHistorial}
                 style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
               />
@@ -3527,6 +3729,59 @@ function App() {
           )}
 
             </>
+          )}
+
+          {mostrarCambioContrasena && (
+            <div style={modalBackdrop} role="dialog" aria-modal="true" aria-labelledby="titulo-contrasena">
+              <form onSubmit={cambiarContrasena} style={modalPanel}>
+                <h2 id="titulo-contrasena" style={{ margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                  <KeyRound size={24} />
+                  Cambiar contraseña
+                </h2>
+                <p style={{ margin: "12px 0", color: "#5f6b85" }}>
+                  Usa una clave nueva de al menos 6 caracteres.
+                </p>
+                <Campo texto="Nueva contraseña">
+                  <input
+                    type="password"
+                    value={formularioContrasena.nueva}
+                    onChange={(e) => setFormularioContrasena({ ...formularioContrasena, nueva: e.target.value })}
+                    autoComplete="new-password"
+                    required
+                    minLength={6}
+                    style={campoFormulario}
+                  />
+                </Campo>
+                <Campo texto="Confirmar contraseña">
+                  <input
+                    type="password"
+                    value={formularioContrasena.confirmar}
+                    onChange={(e) => setFormularioContrasena({ ...formularioContrasena, confirmar: e.target.value })}
+                    autoComplete="new-password"
+                    required
+                    minLength={6}
+                    style={campoFormulario}
+                  />
+                </Campo>
+                <div style={modalAcciones}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMostrarCambioContrasena(false)
+                      setFormularioContrasena({ nueva: "", confirmar: "" })
+                    }}
+                    disabled={estaGuardando("contrasena")}
+                    style={botonSecundario}
+                  >
+                    Cancelar
+                  </button>
+                  <button disabled={estaGuardando("contrasena")} style={botonPrincipal}>
+                    <KeyRound size={18} />
+                    {estaGuardando("contrasena") ? "Guardando..." : "Guardar contraseña"}
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
 
           {anulacionPendiente && (

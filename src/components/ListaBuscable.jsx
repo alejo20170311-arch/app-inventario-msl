@@ -22,6 +22,7 @@ export function ListaBuscable({
   placeholder = "Selecciona una opción",
   required = false,
   disabled = false,
+  soloLista = false,
   style,
 }) {
   const id = useId()
@@ -65,6 +66,36 @@ export function ListaBuscable({
     }
 
     setTextoTemporal("")
+  }
+
+  if (soloLista) {
+    const valorActual = value ?? ""
+    const valorExiste = opciones.some((opcion) => String(opcion.value) === String(valorActual))
+
+    return (
+      <select
+        value={valorExiste ? valorActual : ""}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        disabled={disabled}
+        style={style}
+      >
+        {!valorExiste && (
+          <option value="" disabled={required}>
+            {placeholder}
+          </option>
+        )}
+        {opciones.map((opcion) => (
+          <option
+            key={String(opcion.value)}
+            value={opcion.value}
+            disabled={opcion.disabled}
+          >
+            {opcion.label}
+          </option>
+        ))}
+      </select>
+    )
   }
 
   return (

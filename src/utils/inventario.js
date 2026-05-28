@@ -1,14 +1,17 @@
 export function obtenerStockMinimo(productoCatalogo) {
   if (!productoCatalogo) return ""
+  const nombre = String(productoCatalogo.nombre || "").toLowerCase()
+  const tipo = String(productoCatalogo.tipo || "").toLowerCase()
+
   if (productoCatalogo.stockMinimo !== undefined && productoCatalogo.stockMinimo !== "") {
     return Number(productoCatalogo.stockMinimo)
   }
   if (productoCatalogo.nombre === "Bono Sodexo") return 1
   if (productoCatalogo.nombre === "Bota de seguridad") return 4
-  if (productoCatalogo.nombre.includes("Tapabocas N95")) return 3
-  if (productoCatalogo.nombre.includes("Tapabocas quirurgico")) return 5
-  if (productoCatalogo.nombre.includes("Guantes de nitrilo")) return 5
-  if (["Casco", "Proteccion visual", "Proteccion facial", "Trabajo en alturas"].includes(productoCatalogo.tipo)) return 2
+  if (nombre.includes("tapabocas n95")) return 3
+  if (nombre.includes("tapabocas")) return 5
+  if (nombre.includes("guantes")) return 4
+  if (["protección visual", "proteccion visual", "protección facial", "proteccion facial", "trabajo en alturas"].includes(tipo)) return 2
   if (productoCatalogo.categoria === "Dotación") return 2
 
   return 2

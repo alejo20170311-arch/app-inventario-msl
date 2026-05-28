@@ -1,3 +1,6 @@
+-- Actualiza permisos de Gestion Humana y reemplaza el catalogo EPP.
+-- Ejecutar en Supabase SQL Editor sobre la base publicada.
+
 create or replace function public.guardar_producto_movimiento_rpc(
   p_producto_id uuid,
   p_producto jsonb,
@@ -186,3 +189,139 @@ begin
   );
 end;
 $$;
+
+create or replace function public.guardar_catalogo_producto_rpc(
+  p_catalogo_id uuid,
+  p_catalogo jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_usuario_id uuid := auth.uid();
+  v_rol text;
+  v_catalogo public.catalogo_productos%rowtype;
+begin
+  if v_usuario_id is null then
+    raise exception 'Usuario no autenticado.';
+  end if;
+
+  select rol into v_rol
+  from public.perfiles
+  where id = v_usuario_id
+    and estado = 'Activo';
+
+  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
+    raise exception 'No tienes permiso para modificar el catálogo.';
+  end if;
+
+  if nullif(trim(p_catalogo->>'categoria'), '') not in ('Dotación', 'EPP') then
+    raise exception 'La categoría del catálogo no es válida.';
+  end if;
+
+  if nullif(trim(p_catalogo->>'nombre'), '') is null then
+    raise exception 'El nombre del elemento es obligatorio.';
+  end if;
+
+  if p_catalogo_id is null then
+    insert into public.catalogo_productos (
+      categoria,
+      nombre,
+      tipo,
+      unidad,
+      variantes,
+      stock_minimo
+    )
+    values (
+      trim(p_catalogo->>'categoria'),
+      trim(p_catalogo->>'nombre'),
+      trim(p_catalogo->>'tipo'),
+      trim(p_catalogo->>'unidad'),
+      coalesce(
+        array(select jsonb_array_elements_text(coalesce(p_catalogo->'variantes', '[]'::jsonb))),
+        '{}'::text[]
+      ),
+      coalesce(nullif(p_catalogo->>'stock_minimo', '')::integer, 0)
+    )
+    returning * into v_catalogo;
+  else
+    update public.catalogo_productos
+    set
+      categoria = trim(p_catalogo->>'categoria'),
+      nombre = trim(p_catalogo->>'nombre'),
+      tipo = trim(p_catalogo->>'tipo'),
+      unidad = trim(p_catalogo->>'unidad'),
+      variantes = coalesce(
+        array(select jsonb_array_elements_text(coalesce(p_catalogo->'variantes', '[]'::jsonb))),
+        '{}'::text[]
+      ),
+      stock_minimo = coalesce(nullif(p_catalogo->>'stock_minimo', '')::integer, 0)
+    where id = p_catalogo_id
+    returning * into v_catalogo;
+
+    if not found then
+      raise exception 'El elemento del catálogo no existe.';
+    end if;
+  end if;
+
+  return to_jsonb(v_catalogo);
+end;
+$$;
+
+drop policy if exists "catalogo admin y bodega modifican" on public.catalogo_productos;
+drop policy if exists "catalogo admin gh bodega modifican" on public.catalogo_productos;
+create policy "catalogo admin gh bodega modifican"
+on public.catalogo_productos
+for all
+to authenticated
+using (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'))
+with check (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'));
+
+drop policy if exists "productos admin y bodega modifican" on public.productos;
+drop policy if exists "productos admin gh bodega modifican" on public.productos;
+create policy "productos admin gh bodega modifican"
+on public.productos
+for all
+to authenticated
+using (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'))
+with check (public.rol_usuario() in ('Administrador', 'Gestion Humana', 'Bodega'));
+
+delete from public.catalogo_productos
+where categoria = 'EPP';
+
+insert into public.catalogo_productos (
+  categoria,
+  nombre,
+  tipo,
+  unidad,
+  variantes,
+  stock_minimo
+)
+values
+  ('EPP', 'Casco en trabajo en alturas', 'Trabajo en alturas', 'Unidad', array['Única'], 0),
+  ('EPP', 'Gafas de seguridad', 'Protección visual', 'Unidad', array['Única'], 0),
+  ('EPP', 'Careta Esmerilar', 'Protección facial', 'Unidad', array['Única'], 0),
+  ('EPP', 'Visor de seguridad', 'Protección facial', 'Unidad', array['Única'], 0),
+  ('EPP', 'Tapaoidos', 'Protección auditiva', 'Par', array['Única'], 0),
+  ('EPP', 'Mascara Respirador Media Cara', 'Protección respiratoria', 'Unidad', array['Única'], 0),
+  ('EPP', 'Filtros mascara media cara', 'Protección respiratoria', 'Par', array['Única'], 0),
+  ('EPP', 'Tapabocas N95', 'Protección respiratoria', 'Unidad', array['Única'], 0),
+  ('EPP', 'Tapabocas negro quirurgico', 'Protección respiratoria', 'Unidad', array['Única'], 0),
+  ('EPP', 'Traje en PVC', 'Protección corporal', 'Unidad', array['Única'], 0),
+  ('EPP', 'Peto de carnaza', 'Protección corporal', 'Unidad', array['Única'], 0),
+  ('EPP', 'Delantal Industrial PVC', 'Protección corporal', 'Unidad', array['Única'], 0),
+  ('EPP', 'Guantes de lavanderia medio brazo', 'Protección manos', 'Par', array['Única'], 0),
+  ('EPP', 'Trajes Tyvec', 'Protección corporal', 'Unidad', array['Única'], 0),
+  ('EPP', 'Guantes de carnaza', 'Protección manos', 'Par', array['Única'], 0),
+  ('EPP', 'Guantes de nitrilo', 'Protección manos', 'Caja', array['Única'], 0),
+  ('EPP', 'Guantes de tela', 'Protección manos', 'Par', array['Única'], 0),
+  ('EPP', 'Guantes para calor', 'Protección manos', 'Par', array['Única'], 0),
+  ('EPP', 'Guantes dieléctricos', 'Protección manos', 'Par', array['Única'], 0),
+  ('EPP', 'Canguros (mantenimiento)', 'Mantenimiento', 'Unidad', array['Única'], 0),
+  ('EPP', 'Tapaoidos tipo copa', 'Protección auditiva', 'Unidad', array['Única'], 0)
+on conflict (categoria, nombre) do update set
+  tipo = excluded.tipo,
+  unidad = excluded.unidad,
+  variantes = excluded.variantes;

@@ -21,7 +21,7 @@ begin
   where id = v_usuario_id
     and estado = 'Activo';
 
-  if v_rol not in ('Administrador', 'Bodega') then
+  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
     raise exception 'No tienes permiso para modificar el catálogo.';
   end if;
 
