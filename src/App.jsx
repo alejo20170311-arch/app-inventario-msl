@@ -35,10 +35,10 @@ import {
   cargarDatosInventario,
   colaboradorDesdeSupabase,
   colaboradorParaSupabase,
-  productoDesdeSupabase,
 } from "./lib/inventarioSupabase"
 import {
   anularComprobanteRpc,
+  eliminarProductoAdminRpc,
   guardarCatalogoProductoRpc,
   guardarColaboradorRpc,
   guardarProductoMovimientoRpc,
@@ -339,7 +339,8 @@ function App() {
   )
   const tiposCategoria = [...new Set(productosCategoria.map((producto) => producto.tipo))]
   const variantesProducto = productoSeleccionado?.variantes ?? []
-  const productosStockBajo = productos.filter(
+  const productosActivos = productos.filter((producto) => producto.estado === "Activo")
+  const productosStockBajo = productosActivos.filter(
     (producto) => Number(producto.stockActual) <= Number(producto.stockMinimo)
   )
   const productoMovimiento = productos.find(
@@ -516,7 +517,7 @@ function App() {
   )
     .sort((a, b) => b.cantidad - a.cantidad)
     .slice(0, 5)
-  const entregasRecientes = entregas.slice(0, 5)
+  const entregasRecientes = entregasActivas.slice(0, 5)
   const totalEntregadoMes = entregasMes.reduce(
     (total, item) => total + Number(item.cantidad || 0),
     0
@@ -674,7 +675,7 @@ function App() {
   ]
   const esAdministrador = perfil?.rol === "Administrador"
   const puedeGestionarProductos = ["Administrador", "Gestion Humana", "Bodega"].includes(perfil?.rol)
-  const puedeGestionarMovimientos = ["Administrador", "Gestion Humana", "Bodega"].includes(perfil?.rol)
+  const puedeGestionarMovimientos = esAdministrador
   const puedeGestionarColaboradores = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
   const puedeGestionarEntregas = ["Administrador", "Gestion Humana"].includes(perfil?.rol)
   const perfilesFiltrados = perfiles.filter((item) => {
@@ -704,7 +705,7 @@ function App() {
     { id: "auditoria", texto: "Auditoría", icono: ShieldAlert, soloAdmin: true },
   ].filter((item) => !item.soloAdmin || esAdministrador)
   const indicadoresPrincipales = [
-    { texto: "Productos", valor: productos.length, icono: Package, color: "#0500ff" },
+    { texto: "Productos activos", valor: productosActivos.length, icono: Package, color: "#0500ff" },
     { texto: "Colaboradores activos", valor: colaboradoresActivos.length, icono: Users, color: "#5b8dff" },
     { texto: "Entregas activas", valor: entregasActivas.length, icono: ClipboardCheck, color: "#5b8dff" },
     { texto: "Stock bajo", valor: productosStockBajo.length, icono: Boxes, color: "#0500ff" },
@@ -1313,57 +1314,29 @@ function App() {
   }
 
   async function eliminarProducto(idProducto) {
-    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite eliminar o inactivar productos.")) return
+    if (!requierePermiso(esAdministrador, "Solo un administrador puede eliminar productos del todo.")) return
+    if (accionGuardando) return
 
-    const productoTieneMovimientos = movimientos.some(
-      (item) => item.productoId === idProducto
+    const producto = productos.find((item) => item.id === idProducto)
+    const confirmar = window.confirm(
+      `¿Seguro que quieres eliminar definitivamente ${producto?.nombre || "este producto"}? También se borrarán sus movimientos y entregas asociadas.`
     )
-    const productoTieneEntregas = entregas.some(
-      (item) => item.productoId === idProducto
-    )
 
-    if (productoTieneMovimientos || productoTieneEntregas) {
-      const confirmarInactivar = window.confirm("Este producto ya tiene movimientos o entregas. Para conservar el historial no se puede eliminar. ¿Quieres marcarlo como inactivo?")
+    if (!confirmar) return
 
-      if (confirmarInactivar) {
-        const { data, error } = await supabase
-          .from("productos")
-          .update({ estado: "Inactivo", actualizado_en: ahoraISO() })
-          .eq("id", idProducto)
-          .select("*")
-          .single()
+    setAccionGuardando(`eliminar-producto-${idProducto}`)
 
-        if (error) {
-          mostrarErrorSupabase(error, "inactivar el producto")
-          return
-        }
+    try {
+      await eliminarProductoAdminRpc(idProducto)
 
-        const productoActualizado = productoDesdeSupabase(data)
-
-        setProductos(
-          productos.map((producto) =>
-            producto.id === idProducto ? productoActualizado : producto
-          )
-        )
-      }
-
-      return
-    }
-
-    const confirmar = window.confirm("¿Seguro que quieres eliminar este producto?")
-
-    if (confirmar) {
-      const { error } = await supabase
-        .from("productos")
-        .delete()
-        .eq("id", idProducto)
-
-      if (error) {
-        mostrarErrorSupabase(error, "eliminar el producto")
-        return
-      }
-
-      setProductos(productos.filter((producto) => producto.id !== idProducto))
+      setProductos(productos.filter((item) => item.id !== idProducto))
+      setMovimientos(movimientos.filter((item) => item.productoId !== idProducto))
+      setEntregas(entregas.filter((item) => item.productoId !== idProducto))
+      mostrarMensaje("Producto eliminado definitivamente.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "eliminar el producto")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
@@ -1456,7 +1429,7 @@ function App() {
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite registrar o editar productos.")) return
     if (accionGuardando) return
 
-    const cantidadEntrada = Number(formulario.stockActual)
+    const cantidadEntrada = esAdministrador ? Number(formulario.stockActual) : 0
     const motivoEntrada = formulario.motivoEntrada || "Compra"
     const observacionEntrada = formulario.observacionEntrada
       ? `${motivoEntrada}: ${formulario.observacionEntrada}`
@@ -1476,6 +1449,13 @@ function App() {
 
     try {
       if (productoEditandoId) {
+        const stockEditado = Number(formulario.stockActual)
+
+        if (esAdministrador && (!Number.isFinite(stockEditado) || stockEditado < 0)) {
+          mostrarMensaje("El stock debe ser un número válido mayor o igual a cero.", "error")
+          return
+        }
+
         if (productoEditandoTieneHistorial && productoEditando) {
           const cambioDatoSensible = ["nombre", "categoria", "tipo", "variante", "unidad"].some(
             (campo) => datosProducto[campo] !== productoEditando[campo]
@@ -1487,9 +1467,31 @@ function App() {
           }
         }
 
-        const { producto: productoActualizado } = await guardarProductoMovimientoRpc({
+        const diferenciaStock = esAdministrador && productoEditando
+          ? stockEditado - Number(productoEditando.stockActual)
+          : 0
+        const movimientoAjuste = diferenciaStock !== 0 && productoEditando
+          ? {
+            id: crypto.randomUUID(),
+            productoId: productoEditando.id,
+            producto: productoEditando.nombre,
+            variante: productoEditando.variante,
+            unidad: productoEditando.unidad,
+            tipoMovimiento: diferenciaStock > 0 ? "Ajuste positivo" : "Ajuste negativo",
+            cantidad: Math.abs(diferenciaStock),
+            fecha: fechaLocalISO(),
+            observacion: `Ajuste administrativo de stock: ${productoEditando.stockActual} a ${stockEditado}`,
+            stockResultante: stockEditado,
+          }
+          : null
+
+        const {
+          producto: productoActualizado,
+          movimiento: movimientoCreado,
+        } = await guardarProductoMovimientoRpc({
           productoId: productoEditandoId,
           productoPayload: datosProducto,
+          movimiento: movimientoAjuste,
         })
 
         setProductos(
@@ -1497,6 +1499,9 @@ function App() {
             producto.id === productoEditandoId ? productoActualizado : producto
           )
         )
+        if (movimientoCreado) {
+          setMovimientos([movimientoCreado, ...movimientos])
+        }
         setProductoEditandoId(null)
         setFormulario(formularioVacio)
         mostrarMensaje("Producto actualizado correctamente.", "exito")
@@ -2094,6 +2099,24 @@ function App() {
     }])
   }
 
+  function exportarPedidoAutomatico() {
+    exportarXlsx(`pedido-sugerido-${categoriaPedido.toLowerCase()}-msl.xlsx`, [{
+      nombre: `Pedido ${categoriaPedido}`,
+      columnas: [
+        { titulo: "Producto", campo: "nombre" },
+        { titulo: "Categoría", campo: "categoria" },
+        { titulo: "Tipo", campo: "tipo" },
+        { titulo: "Variante", campo: "variante" },
+        { titulo: "Unidad", campo: "unidad" },
+        { titulo: "Stock actual", campo: "stockActual" },
+        { titulo: "Stock mínimo", campo: "stockMinimo" },
+        { titulo: "Pedido sugerido", campo: "cantidadSugerida" },
+        { titulo: "Ubicación", campo: "ubicacion" },
+      ],
+      filas: productosPedidoAutomatico,
+    }])
+  }
+
   function exportarReporteCompletoExcel() {
     exportarXlsx("reporte-inventario-msl.xlsx", [
       {
@@ -2439,6 +2462,18 @@ function App() {
                       style={campoFormulario}
                     />
                   </Campo>
+
+                  <div style={{ ...filaBotones, marginTop: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={exportarPedidoAutomatico}
+                      disabled={productosPedidoAutomatico.length === 0}
+                      style={productosPedidoAutomatico.length === 0 ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}
+                    >
+                      <Download size={18} />
+                      Descargar pedido sugerido
+                    </button>
+                  </div>
 
                   <table style={tabla}>
                     <thead>
@@ -2935,15 +2970,19 @@ function App() {
               <input value={formulario.ubicacion} onChange={(e) => actualizarCampo("ubicacion", e.target.value)} style={campoFormulario} />
             </Campo>
 
-            <Campo texto={productoEditandoId ? "Stock actual (solo consulta)" : "Stock inicial / entrada"}>
+            <Campo texto={
+              productoEditandoId
+                ? esAdministrador ? "Stock actual / ajuste" : "Stock actual (solo consulta)"
+                : esAdministrador ? "Stock inicial / entrada" : "Stock inicial (solo administrador)"
+            }>
               <input
                 type="number"
                 min="0"
                 value={formulario.stockActual}
                 onChange={(e) => actualizarCampo("stockActual", e.target.value)}
-                readOnly={Boolean(productoEditandoId)}
-                required
-                style={productoEditandoId ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+                readOnly={!esAdministrador}
+                required={esAdministrador}
+                style={!esAdministrador ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
               />
             </Campo>
 
@@ -3055,9 +3094,15 @@ function App() {
                           Editar
                         </button>
 
-                        <button onClick={() => eliminarProducto(producto.id)} style={botonEliminar}>
-                          Eliminar
-                        </button>
+                        {esAdministrador && (
+                          <button
+                            disabled={estaGuardando(`eliminar-producto-${producto.id}`)}
+                            onClick={() => eliminarProducto(producto.id)}
+                            style={botonEliminar}
+                          >
+                            {estaGuardando(`eliminar-producto-${producto.id}`) ? "Eliminando..." : "Eliminar"}
+                          </button>
+                        )}
                       </>
                     ) : (
                       "Solo consulta"

@@ -116,7 +116,9 @@ begin
       raise exception 'El producto no existe.';
     end if;
 
-    if p_movimiento is not null and v_producto.estado = 'Inactivo' then
+    if p_movimiento is not null
+       and v_producto.estado = 'Inactivo'
+       and coalesce(nullif(trim(p_producto->>'estado'), ''), v_producto.estado) = 'Inactivo' then
       raise exception 'No se pueden registrar movimientos sobre un producto inactivo.';
     end if;
 

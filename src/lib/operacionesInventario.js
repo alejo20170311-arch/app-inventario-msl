@@ -29,6 +29,16 @@ export async function guardarProductoMovimientoRpc({
   }
 }
 
+export async function eliminarProductoAdminRpc(productoId) {
+  const { data, error } = await supabase.rpc("eliminar_producto_admin_rpc", {
+    p_producto_id: productoId,
+  })
+
+  if (error) throw error
+
+  return data
+}
+
 export async function guardarCatalogoProductoRpc({
   catalogoId = null,
   catalogoPayload,
