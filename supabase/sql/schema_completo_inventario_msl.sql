@@ -37,7 +37,7 @@ create table if not exists public.productos (
   estado text not null default 'Activo' check (estado in ('Activo', 'Inactivo')),
   creado_en timestamptz not null default now(),
   actualizado_en timestamptz not null default now(),
-  unique (categoria, nombre, variante, unidad)
+  unique (categoria, nombre, tipo, variante, unidad)
 );
 
 create table if not exists public.colaboradores (

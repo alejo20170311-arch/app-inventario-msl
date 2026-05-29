@@ -1,6 +1,13 @@
 -- Actualiza el catalogo EPP con los tipos y tallas definidos para la app.
 -- Ejecutar en Supabase SQL Editor despues de publicar el frontend.
 
+alter table public.productos
+  drop constraint if exists productos_categoria_nombre_variante_unidad_key;
+
+alter table public.productos
+  add constraint productos_categoria_nombre_tipo_variante_unidad_key
+  unique (categoria, nombre, tipo, variante, unidad);
+
 delete from public.catalogo_productos
 where categoria = 'EPP'
   and nombre = 'Tapaoidos tipo copa';

@@ -93,6 +93,13 @@ import {
 
 const assetUrl = (path) => `${import.meta.env.BASE_URL}${path}`
 
+function opcionesSeparadas(valor) {
+  return String(valor || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 function App() {
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
   const [productos, setProductos] = useState([])
@@ -337,7 +344,10 @@ function App() {
       producto.categoria === formulario.categoria &&
       producto.nombre === formulario.nombre
   )
-  const tiposCategoria = [...new Set(productosCategoria.map((producto) => producto.tipo))]
+  const tiposCategoria = [...new Set(productosCategoria.flatMap((producto) => opcionesSeparadas(producto.tipo)))]
+  const tiposProductoSeleccionado = productoSeleccionado
+    ? opcionesSeparadas(productoSeleccionado.tipo)
+    : tiposCategoria
   const variantesProducto = productoSeleccionado?.variantes ?? []
   const productosActivos = productos.filter((producto) => producto.estado === "Activo")
   const productosStockBajo = productosActivos.filter(
@@ -1053,7 +1063,7 @@ function App() {
       setFormulario({
         ...formulario,
         nombre: valor,
-        tipo: productoCatalogo?.tipo ?? "",
+        tipo: opcionesSeparadas(productoCatalogo?.tipo)[0] ?? "",
         variante: "",
         unidad: productoCatalogo?.unidad ?? "Unidad",
         stockMinimo: obtenerStockMinimo(productoCatalogo),
@@ -1521,6 +1531,7 @@ function App() {
         (producto) =>
           producto.categoria === formulario.categoria &&
           producto.nombre === formulario.nombre &&
+          producto.tipo === formulario.tipo &&
           producto.variante === formulario.variante &&
           producto.unidad === formulario.unidad
       )
@@ -2942,7 +2953,7 @@ function App() {
               <ListaBuscable
                 value={formulario.nombre}
                 onChange={(valor) => actualizarCampo("nombre", valor)}
-                options={productosCategoria.map((producto) => producto.nombre)}
+                options={[...new Set(productosCategoria.map((producto) => producto.nombre))]}
                 placeholder="Selecciona un elemento"
                 disabled={productoEditandoTieneHistorial}
                 required
@@ -2954,8 +2965,9 @@ function App() {
               <ListaBuscable
                 value={formulario.tipo}
                 onChange={(valor) => actualizarCampo("tipo", valor)}
-                options={tiposCategoria}
+                options={tiposProductoSeleccionado}
                 placeholder="Selecciona un tipo"
+                soloLista
                 disabled={productoEditandoTieneHistorial}
                 required
                 style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
@@ -2968,6 +2980,7 @@ function App() {
                 onChange={(valor) => actualizarCampo("variante", valor)}
                 options={variantesProducto}
                 placeholder="Selecciona una variante"
+                soloLista
                 disabled={productoEditandoTieneHistorial}
                 required
                 style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
@@ -2979,6 +2992,7 @@ function App() {
                 value={formulario.unidad}
                 onChange={(valor) => actualizarCampo("unidad", valor || "Unidad")}
                 options={unidadesDisponibles}
+                soloLista
                 disabled={productoEditandoTieneHistorial}
                 style={productoEditandoTieneHistorial ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
               />
