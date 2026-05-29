@@ -648,10 +648,12 @@ function App() {
   const tallasRopa = ["N/A", "XS", "S", "M", "L", "XL", "XXL"]
   const tallasPantalon = ["N/A", "6", "8", "10", "12", "14", "16", "28", "30", "32", "34", "36", "38", "40"]
   const tallasBotas = ["35", "36", "37", "38", "39", "40", "41", "42", "43"]
-  const opcionesColaboradoresEntrega = colaboradores.map((item) => ({
-    value: item.id,
-    label: `${item.nombreCompleto} - ${item.identificacion} - ${item.estado}`,
-  }))
+  const opcionesColaboradoresEntrega = colaboradores
+    .filter((item) => item.estado === "Activo")
+    .map((item) => ({
+      value: item.id,
+      label: `${item.nombreCompleto} - ${item.identificacion}`,
+    }))
   const opcionesColaboradoresHistorial = colaboradores.map((item) => ({
     value: item.id,
     label: `${item.nombreCompleto} - ${item.identificacion}`,
@@ -1128,22 +1130,26 @@ function App() {
       return
     }
 
+    const itemOriginalCatalogo = itemCatalogoEditandoClave
+      ? catalogoProductos.find((item) => claveItemCatalogo(item) === itemCatalogoEditandoClave)
+      : null
+    const stockMinimoCatalogo = esAdministrador
+      ? Number(itemCatalogo.stockMinimo)
+      : Number(itemOriginalCatalogo?.stockMinimo ?? 0)
     const nuevoItem = {
       categoria: itemCatalogo.categoria,
       nombre: itemCatalogo.nombre.trim(),
       tipo: itemCatalogo.tipo.trim(),
       unidad: itemCatalogo.unidad,
       variantes,
-      stockMinimo: Number(itemCatalogo.stockMinimo),
+      stockMinimo: stockMinimoCatalogo,
     }
 
     setAccionGuardando("catalogo")
 
     try {
       if (itemCatalogoEditandoClave) {
-        const itemOriginal = catalogoProductos.find(
-          (item) => claveItemCatalogo(item) === itemCatalogoEditandoClave
-        )
+        const itemOriginal = itemOriginalCatalogo
 
         if (!itemOriginal) {
           mostrarMensaje("No encontró el item original para actualizar.", "error")
@@ -1434,13 +1440,16 @@ function App() {
     const observacionEntrada = formulario.observacionEntrada
       ? `${motivoEntrada}: ${formulario.observacionEntrada}`
       : motivoEntrada
+    const stockMinimoProducto = esAdministrador
+      ? Number(formulario.stockMinimo)
+      : Number(productoEditando?.stockMinimo ?? obtenerStockMinimo(productoSeleccionado) ?? 0)
     const datosProducto = {
       nombre: formulario.nombre,
       categoria: formulario.categoria,
       tipo: formulario.tipo,
       variante: formulario.variante,
       unidad: formulario.unidad,
-      stockMinimo: Number(formulario.stockMinimo),
+      stockMinimo: stockMinimoProducto,
       ubicacion: formulario.ubicacion,
       estado: formulario.estado,
     }
@@ -2829,6 +2838,7 @@ function App() {
                     value={itemCatalogo.unidad}
                     onChange={(valor) => actualizarItemCatalogo("unidad", valor || "Unidad")}
                     options={unidadesDisponibles}
+                    soloLista
                     style={campoFormulario}
                   />
                 </Campo>
@@ -2838,7 +2848,15 @@ function App() {
                 </Campo>
 
                 <Campo texto="Stock Mínimo">
-                  <input type="number" min="0" value={itemCatalogo.stockMinimo} onChange={(e) => actualizarItemCatalogo("stockMinimo", e.target.value)} required style={campoFormulario} />
+                  <input
+                    type="number"
+                    min="0"
+                    value={itemCatalogo.stockMinimo || (!esAdministrador ? 0 : "")}
+                    onChange={(e) => actualizarItemCatalogo("stockMinimo", e.target.value)}
+                    readOnly={!esAdministrador}
+                    required
+                    style={!esAdministrador ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
+                  />
                 </Campo>
 
                 <button disabled={estaGuardando("catalogo")} style={botonPrincipal}>
@@ -2992,6 +3010,7 @@ function App() {
                   value={formulario.motivoEntrada || "Compra"}
                   onChange={(valor) => actualizarCampo("motivoEntrada", valor || "Compra")}
                   options={motivosEntrada}
+                  soloLista
                   style={campoFormulario}
                 />
               </Campo>
@@ -3008,9 +3027,10 @@ function App() {
                 type="number"
                 min="0"
                 value={formulario.stockMinimo}
-                readOnly
+                onChange={(e) => actualizarCampo("stockMinimo", e.target.value)}
+                readOnly={!esAdministrador}
                 required
-                style={{ ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" }}
+                style={!esAdministrador ? { ...campoFormulario, background: "#E0E5EB", cursor: "not-allowed" } : campoFormulario}
               />
             </Campo>
 
@@ -3019,6 +3039,7 @@ function App() {
                 value={formulario.estado}
                 onChange={(valor) => actualizarCampo("estado", valor || "Activo")}
                 options={estadosProducto}
+                soloLista
                 style={campoFormulario}
               />
             </Campo>
@@ -3146,6 +3167,7 @@ function App() {
                 value={movimiento.tipoMovimiento}
                 onChange={(valor) => actualizarMovimiento("tipoMovimiento", valor || "Entrada")}
                 options={tiposMovimiento}
+                soloLista
                 style={campoFormulario}
               />
             </Campo>
@@ -3314,6 +3336,7 @@ function App() {
                 value={colaborador.sexo}
                 onChange={(valor) => actualizarColaborador("sexo", valor || "Femenino")}
                 options={["Femenino", "Masculino"]}
+                soloLista
                 style={campoFormulario}
               />
             </Campo>
@@ -3323,6 +3346,7 @@ function App() {
                 value={colaborador.estado}
                 onChange={(valor) => actualizarColaborador("estado", valor || "Activo")}
                 options={estadosColaborador}
+                soloLista
                 style={campoFormulario}
               />
             </Campo>
@@ -3563,6 +3587,7 @@ function App() {
                 value={entrega.motivo}
                 onChange={(valor) => actualizarEntrega("motivo", valor || "Ingreso")}
                 options={motivosEntrega}
+                soloLista
                 style={campoFormulario}
               />
             </Campo>

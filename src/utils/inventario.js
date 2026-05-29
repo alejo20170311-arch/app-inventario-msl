@@ -72,10 +72,10 @@ export function coincideFiltroProducto(producto, filtro) {
 }
 export function coincideFiltroMovimiento(item, filtro) {
   if (filtro === "Entradas") return item.tipoMovimiento === "Entrada"
-  if (filtro === "Devoluciones") return item.tipoMovimiento === "Devolucion"
+  if (filtro === "Devoluciones") return ["Devolucion", "Devolución"].includes(item.tipoMovimiento)
   if (filtro === "Entregas") return item.tipoMovimiento === "Entrega"
   if (filtro === "Ajustes") return item.tipoMovimiento?.includes("Ajuste")
-  if (filtro === "Anulaciones") return item.tipoMovimiento?.includes("Anulacion")
+  if (filtro === "Anulaciones") return normalizarBusqueda(item.tipoMovimiento).includes("anulacion")
   return true
 }
 export function coincideFiltroColaborador(item, filtro) {
