@@ -296,6 +296,7 @@ export function botonFiltro(activo) {
 }
 
 export const tabla = {
+  display: "block",
   width: "100%",
   minWidth: "760px",
   borderCollapse: "separate",
@@ -303,12 +304,16 @@ export const tabla = {
   marginTop: "14px",
   border: `1px solid ${borde}`,
   borderRadius: "8px",
-  overflow: "hidden",
+  overflowX: "auto",
+  whiteSpace: "nowrap",
 }
 
 export const encabezadoTabla = {
   background: "#f8faff",
   color: texto,
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
 }
 
 export const filaBotones = {
@@ -465,6 +470,7 @@ export const celdaTabla = {
   textAlign: "left",
   fontSize: "13px",
   color: texto,
+  verticalAlign: "top",
 }
 
 export const filaAnulada = {

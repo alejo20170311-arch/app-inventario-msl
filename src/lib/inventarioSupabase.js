@@ -208,27 +208,13 @@ export function entregaDesdeSupabase(item) {
 async function cargarCatalogoProductos() {
   const { data, error } = await supabase
     .from("catalogo_productos")
-    .select("*")
+    .select("id, categoria, nombre, tipo, unidad, variantes, stock_minimo")
     .order("categoria")
     .order("nombre")
 
   if (error) throw error
 
-  if (data.length > 0) {
-    return data.map(catalogoDesdeSupabase)
-  }
-
-  const semillas = catalogoProductosBase.map(catalogoParaSupabase)
-  const { data: creados, error: errorSemilla } = await supabase
-    .from("catalogo_productos")
-    .upsert(semillas, { onConflict: "categoria,nombre" })
-    .select("*")
-
-  if (errorSemilla) {
-    return catalogoProductosBase
-  }
-
-  return creados.map(catalogoDesdeSupabase)
+  return data.length > 0 ? data.map(catalogoDesdeSupabase) : catalogoProductosBase
 }
 
 function lanzarSiError(respuesta) {
@@ -246,11 +232,17 @@ export async function cargarDatosInventario() {
     entregasRespuesta,
   ] = await Promise.all([
     cargarCatalogoProductos(),
-    supabase.from("productos").select("*").order("nombre"),
-    supabase.from("colaboradores").select("*").order("nombre_completo"),
+    supabase
+      .from("productos")
+      .select("id, nombre, categoria, tipo, variante, unidad, stock_actual, stock_minimo, ubicacion, estado")
+      .order("nombre"),
+    supabase
+      .from("colaboradores")
+      .select("id, identificacion, nombre_completo, cargo, sub_area, grupo, centro_costos, nombre_centro_costos, sexo, estado, talla_antifluido, talla_bata, talla_camisa, talla_pantalon, talla_botas")
+      .order("nombre_completo"),
     supabase
       .from("movimientos")
-      .select("*")
+      .select("id, comprobante_id, producto_id, producto, variante, unidad, tipo_movimiento, cantidad, fecha, observacion, stock_resultante, creado_en")
       .order("fecha", { ascending: false })
       .order("creado_en", { ascending: false }),
     supabase

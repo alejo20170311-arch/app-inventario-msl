@@ -67,6 +67,20 @@ export async function guardarColaboradorRpc({
   return colaboradorDesdeSupabase(data)
 }
 
+export async function eliminarColaboradorRpc(colaboradorId) {
+  const { data, error } = await supabase.rpc("eliminar_colaborador_rpc", {
+    p_colaborador_id: colaboradorId,
+  })
+
+  if (error) throw error
+
+  return {
+    accion: data?.accion || "eliminado",
+    colaborador: data?.colaborador ? colaboradorDesdeSupabase(data.colaborador) : null,
+    colaboradorId: data?.colaboradorId || colaboradorId,
+  }
+}
+
 export async function registrarEntregaRpc({
   entrega,
   lineasEntregaDetalle,

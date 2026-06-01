@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useState } from "react"
+import { lazy, Suspense } from "react"
 import {
   ArrowLeftRight,
   BarChart3,
@@ -15,7 +16,6 @@ import {
 } from "lucide-react"
 
 import { Campo } from "./components/Campo"
-import { GraficoBarras } from "./components/GraficoBarras"
 import { LayoutInventario } from "./components/LayoutInventario"
 import { ListaBuscable } from "./components/ListaBuscable"
 import { PantallaCarga, PantallaLogin } from "./components/PantallasSesion"
@@ -33,22 +33,24 @@ import {
 } from "./data/inventario"
 import {
   cargarDatosInventario,
-  colaboradorDesdeSupabase,
-  colaboradorParaSupabase,
 } from "./lib/inventarioSupabase"
 import {
   anularComprobanteRpc,
+  eliminarColaboradorRpc,
   eliminarProductoAdminRpc,
   guardarCatalogoProductoRpc,
   guardarColaboradorRpc,
   guardarProductoMovimientoRpc,
   registrarEntregaRpc,
 } from "./lib/operacionesInventario"
+import { cargarResponsablesEntrega } from "./lib/responsablesSupabase"
 import { supabase } from "./lib/supabase"
-import { PanelPrincipal } from "./modules/PanelPrincipal"
 import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
-import { exportarCsv, exportarXlsx, leerCsv } from "./utils/csv"
-import { ahoraISO, fechaLocalISO, mesLocalISO } from "./utils/fechas"
+import {
+  crearAlertaDotacionEntrega,
+  planearDotacionColaboradores,
+} from "./utils/dotacion"
+import { fechaLocalISO, mesLocalISO } from "./utils/fechas"
 import {
   coincideBusqueda,
   coincideFiltroColaborador,
@@ -72,18 +74,17 @@ import {
   campoBusqueda,
   campoFormulario,
   celdaTabla,
-  dashboardGrid,
   encabezadoTabla,
   filaAnulada,
   gridFormulario,
   grupoFiltros,
   iconoIndicador,
+  mensajeApp,
   modalAcciones,
   modalBackdrop,
   modalPanel,
   modalResumen,
   panelBloque,
-  panelGrid,
   resumenHistorial,
   resumenLineasEntrega,
   resumenTallas,
@@ -92,6 +93,25 @@ import {
 } from "./styles"
 
 const assetUrl = (path) => `${import.meta.env.BASE_URL}${path}`
+
+async function descargarCsv(...args) {
+  const { exportarCsv } = await import("./utils/csv")
+
+  return exportarCsv(...args)
+}
+
+async function descargarXlsx(...args) {
+  const { exportarXlsx } = await import("./utils/csv")
+
+  return exportarXlsx(...args)
+}
+
+const PanelPrincipal = lazy(() =>
+  import("./modules/PanelPrincipal").then((modulo) => ({ default: modulo.PanelPrincipal }))
+)
+const ReportesPanel = lazy(() =>
+  import("./modules/ReportesPanel").then((modulo) => ({ default: modulo.ReportesPanel }))
+)
 
 function opcionesSeparadas(valor) {
   return String(valor || "")
@@ -134,7 +154,7 @@ function App() {
   const [busquedaEntregas, setBusquedaEntregas] = useState("")
   const [busquedaReportes, setBusquedaReportes] = useState("")
   const [busquedaPerfiles, setBusquedaPerfiles] = useState("")
-  const [filtroProductos, setFiltroProductos] = useState("Todos")
+  const [filtroProductos, setFiltroProductos] = useState("Activos")
   const [filtroMovimientos, setFiltroMovimientos] = useState("Todos")
   const [filtroColaboradores, setFiltroColaboradores] = useState("Todos")
   const [filtroEntregas, setFiltroEntregas] = useState("Todas")
@@ -149,12 +169,13 @@ function App() {
       hasta: hoy,
       centroCostos: "Todos",
       categoria: "Todas",
-      estado: "Activas",
+      estado: "Todas",
     }
   })
   const [colaboradorHistorialId, setColaboradorHistorialId] = useState("")
   const [colaboradores, setColaboradores] = useState([])
   const [perfiles, setPerfiles] = useState([])
+  const [responsablesEntrega, setResponsablesEntrega] = useState([])
   const [auditoria, setAuditoria] = useState([])
   const [accionGuardando, setAccionGuardando] = useState("")
   const [anulacionPendiente, setAnulacionPendiente] = useState(null)
@@ -275,6 +296,12 @@ function App() {
         setEntregas(datos.entregas)
         setColaboradores(datos.colaboradores)
 
+        const responsables = await cargarResponsablesEntrega(perfil)
+
+        if (!activo) return
+
+        setResponsablesEntrega(responsables)
+
         if (perfil.rol === "Administrador") {
           const [perfilesRespuesta, auditoriaRespuesta] = await Promise.all([
             supabase
@@ -382,6 +409,16 @@ function App() {
     producto: productosPorId.get(String(linea.productoId)),
     cantidad: Number(linea.cantidad),
   }))
+  const entregaTieneDotacion =
+    productoLineaEntrega?.categoria === "Dotación" ||
+    lineasEntregaDetalle.some((linea) => linea.producto?.categoria === "Dotación") ||
+    entrega.motivo === "Dotación periódica"
+  const alertaDotacionEntrega = crearAlertaDotacionEntrega({
+    colaborador: colaboradorEntrega,
+    entregas,
+    fechaEntrega: entrega.fecha,
+    entregaTieneDotacion,
+  })
   const totalLineasEntrega = lineasEntregaDetalle.reduce(
     (total, linea) => total + Number(linea.cantidad || 0),
     0
@@ -579,6 +616,20 @@ function App() {
     (total, item) => total + Number(item.cantidad || 0),
     0
   )
+  const entregasActivasReporte = entregasReporte.filter(
+    (item) => (item.estado || "Activa") === "Activa"
+  )
+  const entregasAnuladasReporte = entregasReporte.filter(
+    (item) => (item.estado || "Activa") === "Anulada"
+  )
+  const totalActivoReporte = entregasActivasReporte.reduce(
+    (total, item) => total + Number(item.cantidad || 0),
+    0
+  )
+  const totalAnuladoReporte = entregasAnuladasReporte.reduce(
+    (total, item) => total + Number(item.cantidad || 0),
+    0
+  )
   const productosReporte = Object.values(
     entregasReporte.reduce((acumulado, item) => {
       const clave = `${item.producto}__${item.variante}`
@@ -646,6 +697,11 @@ function App() {
       cantidadSugerida: Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
     }))
     .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
+  const planeacionDotacion = planearDotacionColaboradores({
+    colaboradores,
+    entregas,
+    fechaBaseISO: fechaLocalISO(),
+  })
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
   const estadosPerfil = ["Activo", "Inactivo"]
@@ -667,6 +723,10 @@ function App() {
   const opcionesColaboradoresHistorial = colaboradores.map((item) => ({
     value: item.id,
     label: `${item.nombreCompleto} - ${item.identificacion}`,
+  }))
+  const opcionesResponsablesEntrega = responsablesEntrega.map((item) => ({
+    value: item.nombre,
+    label: item.rol ? `${item.nombre} - ${item.rol}` : item.nombre,
   }))
   const opcionesProductosMovimiento = productos.map((producto) => ({
     value: producto.id,
@@ -934,6 +994,7 @@ function App() {
     setEntregas([])
     setColaboradores([])
     setPerfiles([])
+    setResponsablesEntrega([])
     setAuditoria([])
     setPestanaActiva("panel")
     mostrarMensaje("Sesión cerrada correctamente.", "exito")
@@ -991,8 +1052,19 @@ function App() {
         lienzo.width = lado
         lienzo.height = lado
         contexto.drawImage(imagen, (lado - ancho) / 2, (lado - alto) / 2, ancho, alto)
-        URL.revokeObjectURL(url)
-        resolve(lienzo.toDataURL("image/jpeg", 0.82))
+
+        const dataUrl = lienzo.toDataURL("image/jpeg", 0.82)
+
+        lienzo.toBlob((blob) => {
+          URL.revokeObjectURL(url)
+
+          if (!blob) {
+            reject(new Error("No se pudo preparar la imagen."))
+            return
+          }
+
+          resolve({ blob, dataUrl })
+        }, "image/jpeg", 0.82)
       }
 
       imagen.onerror = () => {
@@ -1002,6 +1074,31 @@ function App() {
 
       imagen.src = url
     })
+  }
+
+  async function subirAvatarStorage(usuarioId, blob) {
+    if (!usuarioId || !blob) return ""
+
+    try {
+      const rutaAvatar = `${usuarioId}/avatar.jpg`
+      const { error } = await supabase.storage
+        .from("avatars")
+        .upload(rutaAvatar, blob, {
+          cacheControl: "3600",
+          contentType: "image/jpeg",
+          upsert: true,
+        })
+
+      if (error) return ""
+
+      const { data } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(rutaAvatar)
+
+      return data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : ""
+    } catch {
+      return ""
+    }
   }
 
   async function cambiarFotoPerfil(archivo) {
@@ -1015,7 +1112,9 @@ function App() {
     setAccionGuardando("foto-perfil")
 
     try {
-      const avatarUrl = await imagenPerfilReducida(archivo)
+      const avatar = await imagenPerfilReducida(archivo)
+      const avatarStorageUrl = await subirAvatarStorage(sesion?.user?.id, avatar.blob)
+      const avatarUrl = avatarStorageUrl || avatar.dataUrl
       const metadata = {
         ...(sesion?.user?.user_metadata || {}),
         avatar_url: avatarUrl,
@@ -1390,6 +1489,7 @@ function App() {
 
   async function eliminarColaborador(idColaborador) {
     if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite eliminar o retirar colaboradores.")) return
+    if (accionGuardando) return
 
     const colaboradorTieneEntregas = entregas.some(
       (item) => item.colaboradorId === idColaborador
@@ -1399,25 +1499,27 @@ function App() {
       const confirmarRetirar = window.confirm("Este colaborador ya tiene entregas. Para conservar el historial no se puede eliminar. ¿Quieres marcarlo como retirado?")
 
       if (confirmarRetirar) {
-        const { data, error } = await supabase
-          .from("colaboradores")
-          .update({ estado: "Retirado", actualizado_en: ahoraISO() })
-          .eq("id", idColaborador)
-          .select("*")
-          .single()
+        setAccionGuardando(`eliminar-colaborador-${idColaborador}`)
 
-        if (error) {
-          mostrarErrorSupabase(error, "retirar el colaborador")
-          return
-        }
+        try {
+          const resultado = await eliminarColaboradorRpc(idColaborador)
+          const colaboradorActualizado = resultado.colaborador
 
-        const colaboradorActualizado = colaboradorDesdeSupabase(data)
+          if (!colaboradorActualizado) {
+            throw new Error("No se recibió el colaborador actualizado.")
+          }
 
-        setColaboradores(
-          colaboradores.map((item) =>
-            item.id === idColaborador ? colaboradorActualizado : item
+          setColaboradores(
+            colaboradores.map((item) =>
+              item.id === idColaborador ? colaboradorActualizado : item
+            )
           )
-        )
+          mostrarMensaje("Colaborador marcado como retirado.", "exito")
+        } catch (error) {
+          mostrarErrorSupabase(error, "retirar el colaborador")
+        } finally {
+          setAccionGuardando("")
+        }
       }
 
       return
@@ -1426,17 +1528,18 @@ function App() {
     const confirmar = window.confirm("¿Seguro que quieres eliminar este colaborador?")
 
     if (confirmar) {
-      const { error } = await supabase
-        .from("colaboradores")
-        .delete()
-        .eq("id", idColaborador)
+      setAccionGuardando(`eliminar-colaborador-${idColaborador}`)
 
-      if (error) {
+      try {
+        await eliminarColaboradorRpc(idColaborador)
+
+        setColaboradores(colaboradores.filter((item) => item.id !== idColaborador))
+        mostrarMensaje("Colaborador eliminado correctamente.", "exito")
+      } catch (error) {
         mostrarErrorSupabase(error, "eliminar el colaborador")
-        return
+      } finally {
+        setAccionGuardando("")
       }
-
-      setColaboradores(colaboradores.filter((item) => item.id !== idColaborador))
     }
   }
 
@@ -1807,6 +1910,12 @@ function App() {
       return
     }
 
+    if (entregaTieneDotacion && alertaDotacionEntrega?.tipo === "error") {
+      const confirmarDotacion = window.confirm(`${alertaDotacionEntrega.texto}\n\n¿Quieres registrar la entrega de todas formas?`)
+
+      if (!confirmarDotacion) return
+    }
+
     setAccionGuardando("entrega")
 
     try {
@@ -1986,7 +2095,7 @@ function App() {
 
 
   function exportarProductos() {
-    exportarCsv("productos-msl.csv", [
+    descargarCsv("productos-msl.csv", [
       { titulo: "Producto", campo: "nombre" },
       { titulo: "Categoría", campo: "categoria" },
       { titulo: "Tipo", campo: "tipo" },
@@ -2000,7 +2109,7 @@ function App() {
   }
 
   function exportarMovimientos() {
-    exportarCsv("movimientos-msl.csv", [
+    descargarCsv("movimientos-msl.csv", [
       { titulo: "Fecha", campo: "fecha" },
       { titulo: "Producto", campo: "producto" },
       { titulo: "Variante", campo: "variante" },
@@ -2013,7 +2122,7 @@ function App() {
   }
 
   function exportarColaboradores() {
-    exportarCsv("colaboradores-msl.csv", [
+    descargarCsv("colaboradores-msl.csv", [
       { titulo: "Identificación", campo: "identificacion" },
       { titulo: "Nombre completo", campo: "nombreCompleto" },
       { titulo: "Cargo", campo: "cargo" },
@@ -2032,7 +2141,7 @@ function App() {
   }
 
   function exportarEntregas() {
-    exportarCsv("entregas-msl.csv", [
+    descargarCsv("entregas-msl.csv", [
       { titulo: "Comprobante", campo: "numeroComprobante" },
       { titulo: "Fecha", campo: "fecha" },
       { titulo: "Colaborador", campo: "colaborador" },
@@ -2054,7 +2163,7 @@ function App() {
   }
 
   function exportarReporteEntregasFiltradas() {
-    exportarXlsx("reporte-entregas-filtradas-msl.xlsx", [{
+    descargarXlsx("reporte-entregas-filtradas-msl.xlsx", [{
       nombre: "Entregas",
       columnas: [
       { titulo: "Comprobante", campo: "numeroComprobante" },
@@ -2076,7 +2185,7 @@ function App() {
   }
 
   function exportarReporteConsumoProductos() {
-    exportarXlsx("reporte-consumo-productos-msl.xlsx", [{
+    descargarXlsx("reporte-consumo-productos-msl.xlsx", [{
       nombre: "Consumo",
       columnas: [
       { titulo: "Producto", campo: "producto" },
@@ -2090,7 +2199,7 @@ function App() {
   }
 
   function exportarReporteCentros() {
-    exportarXlsx("reporte-centros-costos-msl.xlsx", [{
+    descargarXlsx("reporte-centros-costos-msl.xlsx", [{
       nombre: "Centros",
       columnas: [
       { titulo: "Centro de costos", campo: "codigo" },
@@ -2102,7 +2211,7 @@ function App() {
   }
 
   function exportarReporteStockBajo() {
-    exportarXlsx("reporte-stock-bajo-msl.xlsx", [{
+    descargarXlsx("reporte-stock-bajo-msl.xlsx", [{
       nombre: "Stock bajo",
       columnas: [
       { titulo: "Producto", campo: "nombre" },
@@ -2120,7 +2229,7 @@ function App() {
   }
 
   function exportarPedidoAutomatico() {
-    exportarXlsx(`pedido-sugerido-${categoriaPedido.toLowerCase()}-msl.xlsx`, [{
+    descargarXlsx(`pedido-sugerido-${categoriaPedido.toLowerCase()}-msl.xlsx`, [{
       nombre: `Pedido ${categoriaPedido}`,
       columnas: [
         { titulo: "Producto", campo: "nombre" },
@@ -2138,7 +2247,7 @@ function App() {
   }
 
   function exportarReporteCompletoExcel() {
-    exportarXlsx("reporte-inventario-msl.xlsx", [
+    descargarXlsx("reporte-inventario-msl.xlsx", [
       {
         nombre: "Entregas",
         columnas: [
@@ -2192,7 +2301,7 @@ function App() {
   }
 
   function exportarPerfiles() {
-    exportarCsv("usuarios-msl.csv", [
+    descargarCsv("usuarios-msl.csv", [
       { titulo: "Nombre", campo: "nombre" },
       { titulo: "Correo", campo: "correo" },
       { titulo: "Rol", campo: "rol" },
@@ -2215,6 +2324,7 @@ function App() {
     const lector = new FileReader()
 
     lector.onload = async () => {
+      const { leerCsv } = await import("./utils/csv")
       const filas = leerCsv(String(lector.result || ""))
 
       if (filas.length < 2) {
@@ -2271,28 +2381,27 @@ function App() {
         return
       }
 
-      const identificacionesActuales = new Set(
-        colaboradores.map((item) => item.identificacion)
+      const colaboradoresUnicos = Array.from(
+        new Map(colaboradoresImportados.map((item) => [item.identificacion, item])).values()
       )
-      const nuevos = colaboradoresImportados.filter(
-        (item) => !identificacionesActuales.has(item.identificacion)
+      const colaboradoresPorIdentificacion = new Map(
+        colaboradores.map((item) => [item.identificacion, item])
+      )
+      const nuevos = colaboradoresUnicos.filter(
+        (item) => !colaboradoresPorIdentificacion.has(item.identificacion)
       ).length
-      const actualizados = colaboradoresImportados.length - nuevos
+      const actualizados = colaboradoresUnicos.length - nuevos
 
       try {
-        const { data, error } = await supabase
-          .from("colaboradores")
-          .upsert(
-            colaboradoresImportados.map(colaboradorParaSupabase),
-            { onConflict: "identificacion" }
-          )
-          .select("*")
+        const colaboradoresGuardados = await Promise.all(
+          colaboradoresUnicos.map((item) => {
+            const existente = colaboradoresPorIdentificacion.get(item.identificacion)
 
-        if (error) throw error
-
-        const colaboradoresGuardados = data.map(colaboradorDesdeSupabase)
-        const colaboradoresPorIdentificacion = new Map(
-          colaboradores.map((item) => [item.identificacion, item])
+            return guardarColaboradorRpc({
+              colaboradorId: existente?.id || null,
+              colaboradorPayload: item,
+            })
+          })
         )
 
         colaboradoresGuardados.forEach((item) => {
@@ -2332,6 +2441,7 @@ function App() {
       cerrarMensaje={() => setMensaje(null)}
     >
           {pestanaActiva === "panel" && (
+            <Suspense fallback={<p style={ayudaFormulario}>Cargando panel...</p>}>
             <PanelPrincipal
               indicadoresPanel={indicadoresPanel}
               renderIndicador={renderIndicador}
@@ -2340,304 +2450,43 @@ function App() {
               entregasPorCentroCostos={entregasPorCentroCostos}
               entregasRecientes={entregasRecientes}
             />
+            </Suspense>
           )}
 
           {pestanaActiva === "reportes" && (
-            <>
-              <div style={accionesModulo}>
-                <button type="button" onClick={exportarReporteCompletoExcel} style={botonPrincipal}>
-                  <Download size={18} />
-                  Exportar reporte Excel
-                </button>
-                <button type="button" onClick={exportarReporteEntregasFiltradas} style={botonSecundario}>
-                  <Download size={18} />
-                  Entregas XLSX
-                </button>
-                <button type="button" onClick={exportarReporteConsumoProductos} style={botonSecundario}>
-                  <Download size={18} />
-                  Consumo XLSX
-                </button>
-                <button type="button" onClick={exportarReporteCentros} style={botonSecundario}>
-                  <Download size={18} />
-                  Centros XLSX
-                </button>
-                <button type="button" onClick={exportarReporteStockBajo} style={botonSecundario}>
-                  <Download size={18} />
-                  Stock bajo XLSX
-                </button>
-              </div>
-
-              <h2 style={{ marginTop: "34px" }}>Reportes</h2>
-
-              <section style={panelBloque}>
-                <form style={gridFormulario}>
-                  <Campo texto="Desde">
-                    <input type="date" value={filtrosReporte.desde} onChange={(e) => actualizarFiltroReporte("desde", e.target.value)} style={campoFormulario} />
-                  </Campo>
-
-                  <Campo texto="Hasta">
-                    <input type="date" value={filtrosReporte.hasta} onChange={(e) => actualizarFiltroReporte("hasta", e.target.value)} style={campoFormulario} />
-                  </Campo>
-
-                  <Campo texto="Centro de costos">
-                    <ListaBuscable
-                      value={filtrosReporte.centroCostos}
-                      onChange={(valor) => actualizarFiltroReporte("centroCostos", valor || "Todos")}
-                      options={opcionesCentrosReporte}
-                      placeholder="Todos"
-                      style={campoFormulario}
-                    />
-                  </Campo>
-
-                  <Campo texto="Categoría">
-                  <ListaBuscable
-                    value={filtrosReporte.categoria}
-                    onChange={(valor) => actualizarFiltroReporte("categoria", valor || "Todas")}
-                    options={["Todas", ...categoriasDisponibles]}
-                    placeholder="Todas"
-                    soloLista
-                    style={campoFormulario}
-                  />
-                  </Campo>
-
-                  <Campo texto="Estado">
-                    <ListaBuscable
-                      value={filtrosReporte.estado}
-                      onChange={(valor) => actualizarFiltroReporte("estado", valor || "Todas")}
-                      options={["Todas", "Activas", "Anuladas"]}
-                      placeholder="Todas"
-                      style={campoFormulario}
-                    />
-                  </Campo>
-
-                  <Campo texto="Buscar">
-                    <input
-                      value={busquedaReportes}
-                      onChange={(e) => setBusquedaReportes(e.target.value)}
-                      placeholder="Colaborador, producto, comprobante, grupo o responsable"
-                      style={campoFormulario}
-                    />
-                  </Campo>
-                </form>
-              </section>
-
-              <div style={dashboardGrid}>
-                <div style={tarjetaIndicador("#0100FE")}>
-                  <strong>Ítems entregados</strong>
-                  <h2>{totalEntregadoReporte}</h2>
-                </div>
-                <div style={tarjetaIndicador("#77A9FF")}>
-                  <strong>Líneas de entrega</strong>
-                  <h2>{entregasReporte.length}</h2>
-                </div>
-                <div style={tarjetaIndicador("#0100FE")}>
-                  <strong>Colaboradores</strong>
-                  <h2>{colaboradoresReporte.length}</h2>
-                </div>
-                <div style={tarjetaIndicador("#000000")}>
-                  <strong>Productos en stock bajo</strong>
-                  <h2>{productosStockBajo.length}</h2>
-                </div>
-              </div>
-
-              <div style={panelGrid}>
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Gráfico de consumo por producto</h3>
-                  <GraficoBarras
-                    datos={productosReporteGrafico}
-                    etiqueta="etiqueta"
-                    valor="cantidad"
-                    color="#0100FE"
-                  />
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Gráfico por centro de costos</h3>
-                  <GraficoBarras
-                    datos={centrosReporteGrafico}
-                    etiqueta="centro"
-                    valor="cantidad"
-                    color="#008a4c"
-                  />
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Colaboradores con más entregas</h3>
-                  <GraficoBarras
-                    datos={colaboradoresReporteGrafico}
-                    etiqueta="colaborador"
-                    valor="cantidad"
-                    color="#050505"
-                  />
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Pedido automático por stock bajo</h3>
-                  <Campo texto="Categoría del pedido">
-                    <ListaBuscable
-                      value={categoriaPedido}
-                      onChange={(valor) => setCategoriaPedido(valor || "EPP")}
-                      options={categoriasDisponibles}
-                      soloLista
-                      style={campoFormulario}
-                    />
-                  </Campo>
-
-                  <div style={{ ...filaBotones, marginTop: "12px" }}>
-                    <button
-                      type="button"
-                      onClick={exportarPedidoAutomatico}
-                      disabled={productosPedidoAutomatico.length === 0}
-                      style={productosPedidoAutomatico.length === 0 ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}
-                    >
-                      <Download size={18} />
-                      Descargar pedido sugerido
-                    </button>
-                  </div>
-
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>Stock</th>
-                        <th style={celdaTabla}>Mínimo</th>
-                        <th style={celdaTabla}>Pedido sugerido</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productosPedidoAutomatico.length === 0 ? (
-                        <tr>
-                          <td colSpan="4" style={celdaTabla}>No hay productos de {categoriaPedido} por pedir.</td>
-                        </tr>
-                      ) : (
-                        productosPedidoAutomatico.map((producto) => (
-                          <tr key={producto.id}>
-                            <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
-                            <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
-                            <td style={celdaTabla}>{producto.stockMinimo}</td>
-                            <td style={celdaTabla}>{producto.cantidadSugerida} {producto.unidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-              </div>
-
-              <div style={panelGrid}>
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Consumo por producto</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>Categoría</th>
-                        <th style={celdaTabla}>Cantidad</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productosReporte.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Sin entregas para los filtros seleccionados.</td>
-                        </tr>
-                      ) : (
-                        productosReporte.slice(0, 12).map((item) => (
-                          <tr key={`${item.producto}-${item.variante}`}>
-                            <td style={celdaTabla}>{item.producto} - {item.variante}</td>
-                            <td style={celdaTabla}>{item.categoria}</td>
-                            <td style={celdaTabla}>{item.cantidad} {item.unidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Entregas por centro de costos</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>Código</th>
-                        <th style={celdaTabla}>Ítems</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {centrosReporte.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Sin entregas para los filtros seleccionados.</td>
-                        </tr>
-                      ) : (
-                        centrosReporte.map((item) => (
-                          <tr key={`${item.codigo}-${item.centro}`}>
-                            <td style={celdaTabla}>{item.centro}</td>
-                            <td style={celdaTabla}>{item.codigo}</td>
-                            <td style={celdaTabla}>{item.cantidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Colaboradores con más entregas</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Colaborador</th>
-                        <th style={celdaTabla}>Centro</th>
-                        <th style={celdaTabla}>Ítems</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {colaboradoresReporte.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Sin entregas para los filtros seleccionados.</td>
-                        </tr>
-                      ) : (
-                        colaboradoresReporte.slice(0, 12).map((item) => (
-                          <tr key={`${item.identificacion}-${item.colaborador}`}>
-                            <td style={celdaTabla}>{item.colaborador}</td>
-                            <td style={celdaTabla}>{item.centroCostos}</td>
-                            <td style={celdaTabla}>{item.cantidad}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section style={panelBloque}>
-                  <h3 style={{ marginTop: 0 }}>Stock bajo</h3>
-                  <table style={tabla}>
-                    <thead>
-                      <tr style={encabezadoTabla}>
-                        <th style={celdaTabla}>Producto</th>
-                        <th style={celdaTabla}>Stock</th>
-                        <th style={celdaTabla}>Mínimo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productosStockBajoReporte.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" style={celdaTabla}>Sin productos en stock bajo.</td>
-                        </tr>
-                      ) : (
-                        productosStockBajoReporte.map((producto) => (
-                          <tr key={producto.id}>
-                            <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
-                            <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
-                            <td style={celdaTabla}>{producto.stockMinimo}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </section>
-              </div>
-            </>
+            <Suspense fallback={<p style={ayudaFormulario}>Cargando reportes...</p>}>
+            <ReportesPanel
+              filtrosReporte={filtrosReporte}
+              actualizarFiltroReporte={actualizarFiltroReporte}
+              opcionesCentrosReporte={opcionesCentrosReporte}
+              categoriasDisponibles={categoriasDisponibles}
+              busquedaReportes={busquedaReportes}
+              setBusquedaReportes={setBusquedaReportes}
+              totalEntregadoReporte={totalEntregadoReporte}
+              totalActivoReporte={totalActivoReporte}
+              totalAnuladoReporte={totalAnuladoReporte}
+              entregasActivasReporte={entregasActivasReporte}
+              entregasAnuladasReporte={entregasAnuladasReporte}
+              colaboradoresReporte={colaboradoresReporte}
+              productosStockBajo={productosStockBajo}
+              productosReporteGrafico={productosReporteGrafico}
+              centrosReporteGrafico={centrosReporteGrafico}
+              colaboradoresReporteGrafico={colaboradoresReporteGrafico}
+              categoriaPedido={categoriaPedido}
+              setCategoriaPedido={setCategoriaPedido}
+              productosPedidoAutomatico={productosPedidoAutomatico}
+              planeacionDotacion={planeacionDotacion}
+              productosReporte={productosReporte}
+              centrosReporte={centrosReporte}
+              productosStockBajoReporte={productosStockBajoReporte}
+              exportarReporteCompletoExcel={exportarReporteCompletoExcel}
+              exportarReporteEntregasFiltradas={exportarReporteEntregasFiltradas}
+              exportarReporteConsumoProductos={exportarReporteConsumoProductos}
+              exportarReporteCentros={exportarReporteCentros}
+              exportarReporteStockBajo={exportarReporteStockBajo}
+              exportarPedidoAutomatico={exportarPedidoAutomatico}
+            />
+            </Suspense>
           )}
 
           {pestanaActiva === "usuarios" && esAdministrador && (
@@ -3539,6 +3388,18 @@ function App() {
               </div>
             )}
 
+            {alertaDotacionEntrega && (
+              <div style={{ ...mensajeApp(alertaDotacionEntrega.tipo), gridColumn: "1 / -1", display: "grid", alignItems: "start" }}>
+                <strong>{alertaDotacionEntrega.titulo}</strong>
+                <span>{alertaDotacionEntrega.texto}</span>
+                {alertaDotacionEntrega.ultima && (
+                  <span>
+                    Último registro: {alertaDotacionEntrega.ultima.producto} - {alertaDotacionEntrega.ultima.variante} ({alertaDotacionEntrega.ultima.fecha})
+                  </span>
+                )}
+              </div>
+            )}
+
             <Campo texto="Producto">
               <ListaBuscable
                 value={lineaEntrega.productoId}
@@ -3607,7 +3468,15 @@ function App() {
             </Campo>
 
             <Campo texto="Responsable">
-              <input value={entrega.responsable} onChange={(e) => actualizarEntrega("responsable", e.target.value)} required style={campoFormulario} />
+              <ListaBuscable
+                value={entrega.responsable}
+                onChange={(valor) => actualizarEntrega("responsable", valor)}
+                options={opcionesResponsablesEntrega}
+                placeholder="Selecciona responsable"
+                required
+                soloLista
+                style={campoFormulario}
+              />
             </Campo>
 
             <Campo texto="Observación">
