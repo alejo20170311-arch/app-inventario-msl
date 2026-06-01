@@ -1,7 +1,7 @@
 import { catalogoProductosBase } from "../data/inventario"
 import { obtenerStockMinimo } from "../utils/inventario"
 
-import { supabase } from "./supabase"
+import { obtenerSesionActiva, supabase } from "./supabase"
 
 function numero(valor, defecto = 0) {
   const convertido = Number(valor)
@@ -224,6 +224,8 @@ function lanzarSiError(respuesta) {
 }
 
 export async function cargarDatosInventario() {
+  await obtenerSesionActiva()
+
   const [
     catalogoProductos,
     productosRespuesta,

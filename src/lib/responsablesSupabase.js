@@ -1,4 +1,4 @@
-import { supabase } from "./supabase"
+import { rpcAutenticado } from "./supabase"
 
 function responsableDesdePerfil(item) {
   return {
@@ -26,7 +26,7 @@ export async function cargarResponsablesEntrega(perfilActual) {
   const respaldo = fallbackResponsable(perfilActual)
 
   try {
-    const { data, error } = await supabase.rpc("listar_responsables_entrega_rpc")
+    const { data, error } = await rpcAutenticado("listar_responsables_entrega_rpc")
 
     if (error) return respaldo
 

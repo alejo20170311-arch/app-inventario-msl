@@ -8,14 +8,15 @@ import {
   productoDesdeSupabase,
   productoParaSupabase,
 } from "./inventarioSupabase"
-import { supabase } from "./supabase"
+import { rpcAutenticado } from "./supabase"
+import { numeroSeguro, textoLargoSeguro, textoSeguro, uuidValido } from "../utils/seguridad"
 
 export async function guardarProductoMovimientoRpc({
   productoId = null,
   productoPayload,
   movimiento = null,
 }) {
-  const { data, error } = await supabase.rpc("guardar_producto_movimiento_rpc", {
+  const { data, error } = await rpcAutenticado("guardar_producto_movimiento_rpc", {
     p_producto_id: productoId,
     p_producto: productoParaSupabase(productoPayload),
     p_movimiento: movimiento ? movimientoParaSupabase(movimiento, null) : null,
@@ -30,7 +31,9 @@ export async function guardarProductoMovimientoRpc({
 }
 
 export async function eliminarProductoAdminRpc(productoId) {
-  const { data, error } = await supabase.rpc("eliminar_producto_admin_rpc", {
+  if (!uuidValido(productoId)) throw new Error("Producto inválido.")
+
+  const { data, error } = await rpcAutenticado("eliminar_producto_admin_rpc", {
     p_producto_id: productoId,
   })
 
@@ -43,7 +46,7 @@ export async function guardarCatalogoProductoRpc({
   catalogoId = null,
   catalogoPayload,
 }) {
-  const { data, error } = await supabase.rpc("guardar_catalogo_producto_rpc", {
+  const { data, error } = await rpcAutenticado("guardar_catalogo_producto_rpc", {
     p_catalogo_id: catalogoId,
     p_catalogo: catalogoParaSupabase(catalogoPayload),
   })
@@ -57,7 +60,7 @@ export async function guardarColaboradorRpc({
   colaboradorId = null,
   colaboradorPayload,
 }) {
-  const { data, error } = await supabase.rpc("guardar_colaborador_rpc", {
+  const { data, error } = await rpcAutenticado("guardar_colaborador_rpc", {
     p_colaborador_id: colaboradorId,
     p_colaborador: colaboradorParaSupabase(colaboradorPayload),
   })
@@ -68,7 +71,9 @@ export async function guardarColaboradorRpc({
 }
 
 export async function eliminarColaboradorRpc(colaboradorId) {
-  const { data, error } = await supabase.rpc("eliminar_colaborador_rpc", {
+  if (!uuidValido(colaboradorId)) throw new Error("Colaborador inválido.")
+
+  const { data, error } = await rpcAutenticado("eliminar_colaborador_rpc", {
     p_colaborador_id: colaboradorId,
   })
 
@@ -85,15 +90,15 @@ export async function registrarEntregaRpc({
   entrega,
   lineasEntregaDetalle,
 }) {
-  const { data, error } = await supabase.rpc("registrar_entrega_rpc", {
+  const { data, error } = await rpcAutenticado("registrar_entrega_rpc", {
     p_colaborador_id: entrega.colaboradorId,
     p_fecha: entrega.fecha,
-    p_motivo: entrega.motivo,
-    p_responsable: entrega.responsable,
-    p_observacion: entrega.observacion || "",
+    p_motivo: textoSeguro(entrega.motivo, 80),
+    p_responsable: textoSeguro(entrega.responsable, 160),
+    p_observacion: textoLargoSeguro(entrega.observacion),
     p_lineas: lineasEntregaDetalle.map((linea) => ({
       producto_id: linea.producto.id,
-      cantidad: Number(linea.cantidad),
+      cantidad: numeroSeguro(linea.cantidad, { minimo: 1 }),
     })),
   })
 
@@ -110,9 +115,11 @@ export async function anularComprobanteRpc({
   entregaId,
   motivoAnulacion,
 }) {
-  const { data, error } = await supabase.rpc("anular_comprobante_rpc", {
+  if (!uuidValido(entregaId)) throw new Error("Entrega inválida.")
+
+  const { data, error } = await rpcAutenticado("anular_comprobante_rpc", {
     p_entrega_id: entregaId,
-    p_motivo_anulacion: motivoAnulacion,
+    p_motivo_anulacion: textoLargoSeguro(motivoAnulacion),
   })
 
   if (error) throw error

@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useState } from "react"
 import { lazy, Suspense } from "react"
+import { useRef } from "react"
 import {
   ArrowLeftRight,
   BarChart3,
@@ -43,6 +44,12 @@ import {
   guardarProductoMovimientoRpc,
   registrarEntregaRpc,
 } from "./lib/operacionesInventario"
+import {
+  cambiarEstadoPerfilSeguro,
+  cargarAdministracionUsuarios,
+  cargarPerfilUsuario,
+  guardarPerfilUsuarioSeguro,
+} from "./lib/perfilesSupabase"
 import { cargarResponsablesEntrega } from "./lib/responsablesSupabase"
 import { supabase } from "./lib/supabase"
 import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
@@ -62,6 +69,16 @@ import {
   obtenerStockMinimo,
   productoSugeridoParaColaborador,
 } from "./utils/inventario"
+import {
+  correoValido,
+  fechaIsoValida,
+  mensajeSeguroError,
+  numeroSeguro,
+  textoLargoSeguro,
+  textoSeguro,
+  validarArchivoCsv,
+  validarCamposRequeridos,
+} from "./utils/seguridad"
 import {
   accionesModulo,
   ayudaFormulario,
@@ -120,7 +137,18 @@ function opcionesSeparadas(valor) {
     .filter(Boolean)
 }
 
+function accionDentroDelLimite(registroAcciones, accion, esperaMs) {
+  const ahora = Date.now()
+  const anterior = registroAcciones.current.get(accion) || 0
+
+  if (ahora - anterior < esperaMs) return false
+
+  registroAcciones.current.set(accion, ahora)
+  return true
+}
+
 function App() {
+  const accionesRecientes = useRef(new Map())
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
   const [productos, setProductos] = useState([])
   const [movimientos, setMovimientos] = useState([])
@@ -197,13 +225,11 @@ function App() {
   })
 
   const cargarPerfil = useCallback(async (usuarioId) => {
-    const { data, error } = await supabase
-      .from("perfiles")
-      .select("nombre, correo, rol, estado")
-      .eq("id", usuarioId)
-      .single()
+    let data
 
-    if (error || !data) {
+    try {
+      data = await cargarPerfilUsuario(usuarioId)
+    } catch {
       setPerfil(null)
       setErrorLogin("Tu usuario existe, pero no tiene perfil activo en la app.")
       return null
@@ -303,23 +329,10 @@ function App() {
         setResponsablesEntrega(responsables)
 
         if (perfil.rol === "Administrador") {
-          const [perfilesRespuesta, auditoriaRespuesta] = await Promise.all([
-            supabase
-              .from("perfiles")
-              .select("id, nombre, correo, rol, estado, creado_en")
-              .order("nombre"),
-            supabase
-              .from("auditoria")
-              .select("id, usuario_id, accion, tabla, registro_id, detalle, creado_en")
-              .order("creado_en", { ascending: false })
-              .limit(200),
-          ])
+          const administracion = await cargarAdministracionUsuarios()
 
-          if (perfilesRespuesta.error) throw perfilesRespuesta.error
-          if (auditoriaRespuesta.error) throw auditoriaRespuesta.error
-
-          setPerfiles(perfilesRespuesta.data || [])
-          setAuditoria(auditoriaRespuesta.data || [])
+          setPerfiles(administracion.perfiles)
+          setAuditoria(administracion.auditoria)
         } else {
           setPerfiles([])
           setAuditoria([])
@@ -327,7 +340,7 @@ function App() {
       } catch (error) {
         if (activo) {
           setMensaje({
-            texto: `No se pudo cargar la información de Supabase: ${error.message}`,
+            texto: `No se pudo cargar la información: ${mensajeSeguroError(error)}`,
             tipo: "error",
           })
         }
@@ -809,30 +822,12 @@ function App() {
   }
 
   function mostrarErrorSupabase(error, accion = "guardar la información") {
-    const mensajeOriginal = String(error?.message || error || "")
-    const mensaje = mensajeOriginal.toLowerCase()
-
-    if (mensaje.includes("row-level security") || mensaje.includes("permission denied")) {
-      mostrarMensaje(`No se pudo ${accion}: tu rol no tiene permiso para esta acción.`, "error")
-      return
-    }
-
-    if (mensaje.includes("duplicate key") || mensaje.includes("unique constraint")) {
-      mostrarMensaje(`No se pudo ${accion}: ya existe un registro con esos datos.`, "error")
-      return
-    }
-
-    if (mensaje.includes("could not find the function") || mensaje.includes("function") && mensaje.includes("does not exist")) {
-      mostrarMensaje(`No se pudo ${accion}: falta aplicar una función RPC en Supabase.`, "error")
-      return
-    }
-
-    if (mensaje.includes("jwt") || mensaje.includes("session")) {
-      mostrarMensaje(`No se pudo ${accion}: la sesión venció. Cierra sesión e ingresa de nuevo.`, "error")
-      return
-    }
-
-    mostrarMensaje(`No se pudo ${accion}: ${mensajeOriginal}`, "error")
+    console.warn("Operación rechazada por seguridad o validación.", {
+      accion,
+      codigo: error?.code,
+      nombre: error?.name,
+    })
+    mostrarMensaje(`No se pudo ${accion}: ${mensajeSeguroError(error)}`, "error")
   }
 
   function requierePermiso(condicion, mensajePermiso) {
@@ -844,6 +839,15 @@ function App() {
 
   function estaGuardando(accion) {
     return accionGuardando === accion
+  }
+
+  function accionPermitida(accion, esperaMs = 1200) {
+    if (!accionDentroDelLimite(accionesRecientes, accion, esperaMs)) {
+      mostrarMensaje("Espera unos segundos antes de repetir esta acción.", "error")
+      return false
+    }
+
+    return true
   }
 
   function actualizarPerfilFormulario(campo, valor) {
@@ -879,31 +883,25 @@ function App() {
     evento.preventDefault()
 
     if (!requierePermiso(esAdministrador, "Solo un administrador puede gestionar usuarios.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("perfil")) return
 
     const payload = {
-      id: perfilFormulario.id.trim(),
-      nombre: perfilFormulario.nombre.trim(),
-      correo: perfilFormulario.correo.trim().toLowerCase(),
+      id: textoSeguro(perfilFormulario.id, 80),
+      nombre: textoSeguro(perfilFormulario.nombre, 120),
+      correo: textoSeguro(perfilFormulario.correo, 160).toLowerCase(),
       rol: perfilFormulario.rol,
       estado: perfilFormulario.estado,
     }
 
-    if (!payload.id || !payload.nombre || !payload.correo) {
-      mostrarMensaje("Completa el ID de Supabase Auth, nombre y correo.", "error")
+    if (!payload.id || !payload.nombre || !correoValido(payload.correo)) {
+      mostrarMensaje("Completa el ID de Supabase Auth, nombre y un correo válido.", "error")
       return
     }
 
     setAccionGuardando("perfil")
 
     try {
-      const { data, error } = await supabase
-        .from("perfiles")
-        .upsert(payload, { onConflict: "id" })
-        .select("id, nombre, correo, rol, estado, creado_en")
-        .single()
-
-      if (error) throw error
+      const data = await guardarPerfilUsuarioSeguro(payload)
 
       setPerfiles((actuales) => {
         const existe = actuales.some((item) => item.id === data.id)
@@ -924,7 +922,7 @@ function App() {
 
   async function cambiarEstadoPerfil(item) {
     if (!requierePermiso(esAdministrador, "Solo un administrador puede cambiar usuarios.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida(`perfil-${item.id}`)) return
 
     if (item.id === sesion?.user?.id && item.estado === "Activo") {
       mostrarMensaje("No puedes inactivar tu propio usuario desde esta pantalla.", "error")
@@ -936,14 +934,7 @@ function App() {
     setAccionGuardando(`perfil-${item.id}`)
 
     try {
-      const { data, error } = await supabase
-        .from("perfiles")
-        .update({ estado: nuevoEstado })
-        .eq("id", item.id)
-        .select("id, nombre, correo, rol, estado, creado_en")
-        .single()
-
-      if (error) throw error
+      const data = await cambiarEstadoPerfilSeguro(item.id, nuevoEstado)
 
       setPerfiles(perfiles.map((perfilItem) => perfilItem.id === item.id ? data : perfilItem))
       mostrarMensaje(`Usuario ${nuevoEstado.toLowerCase()} correctamente.`, "exito")
@@ -1003,7 +994,7 @@ function App() {
   async function cambiarContrasena(evento) {
     evento.preventDefault()
 
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("contrasena", 2500)) return
 
     const nueva = formularioContrasena.nueva.trim()
     const confirmar = formularioContrasena.confirmar.trim()
@@ -1095,14 +1086,14 @@ function App() {
         .from("avatars")
         .getPublicUrl(rutaAvatar)
 
-      return data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : ""
+      return data?.publicUrl ? `${data.publicUrl}?v=${crypto.randomUUID()}` : ""
     } catch {
       return ""
     }
   }
 
   async function cambiarFotoPerfil(archivo) {
-    if (!archivo || accionGuardando) return
+    if (!archivo || accionGuardando || !accionPermitida("foto-perfil", 2500)) return
 
     if (!archivo.type.startsWith("image/")) {
       mostrarMensaje("Selecciona una imagen válida para la foto de perfil.", "error")
@@ -1215,11 +1206,11 @@ function App() {
   async function registrarItemCatalogo(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite modificar el catálogo.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("catalogo")) return
 
     const variantes = itemCatalogo.variantes
       .split(",")
-      .map((variante) => variante.trim())
+      .map((variante) => textoSeguro(variante, 60))
       .filter(Boolean)
 
     if (variantes.length === 0) {
@@ -1239,6 +1230,17 @@ function App() {
       return
     }
 
+    try {
+      validarCamposRequeridos([
+        { valor: itemCatalogo.nombre, mensaje: "Escribe el nombre del item." },
+        { valor: itemCatalogo.tipo, mensaje: "Escribe el tipo del item." },
+      ])
+      numeroSeguro(itemCatalogo.stockMinimo || 0, { minimo: 0 })
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar el catálogo")
+      return
+    }
+
     const itemOriginalCatalogo = itemCatalogoEditandoClave
       ? catalogoProductos.find((item) => claveItemCatalogo(item) === itemCatalogoEditandoClave)
       : null
@@ -1247,8 +1249,8 @@ function App() {
       : Number(itemOriginalCatalogo?.stockMinimo ?? 0)
     const nuevoItem = {
       categoria: itemCatalogo.categoria,
-      nombre: itemCatalogo.nombre.trim(),
-      tipo: itemCatalogo.tipo.trim(),
+      nombre: textoSeguro(itemCatalogo.nombre, 160),
+      tipo: textoSeguro(itemCatalogo.tipo, 160),
       unidad: itemCatalogo.unidad,
       variantes,
       stockMinimo: stockMinimoCatalogo,
@@ -1430,7 +1432,7 @@ function App() {
 
   async function eliminarProducto(idProducto) {
     if (!requierePermiso(esAdministrador, "Solo un administrador puede eliminar productos del todo.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida(`eliminar-producto-${idProducto}`, 2500)) return
 
     const producto = productos.find((item) => item.id === idProducto)
     const confirmar = window.confirm(
@@ -1489,7 +1491,7 @@ function App() {
 
   async function eliminarColaborador(idColaborador) {
     if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite eliminar o retirar colaboradores.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida(`eliminar-colaborador-${idColaborador}`, 2500)) return
 
     const colaboradorTieneEntregas = entregas.some(
       (item) => item.colaboradorId === idColaborador
@@ -1546,24 +1548,38 @@ function App() {
   async function registrarProducto(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite registrar o editar productos.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("producto")) return
+
+    try {
+      validarCamposRequeridos([
+        { valor: formulario.nombre, mensaje: "Selecciona o escribe el nombre del producto." },
+        { valor: formulario.tipo, mensaje: "Selecciona o escribe el tipo del producto." },
+        { valor: formulario.variante, mensaje: "Selecciona o escribe la variante del producto." },
+        { valor: formulario.ubicacion, mensaje: "Escribe la ubicación del producto." },
+      ])
+      numeroSeguro(esAdministrador ? formulario.stockActual : 0, { minimo: 0 })
+      numeroSeguro(esAdministrador ? formulario.stockMinimo : productoEditando?.stockMinimo ?? obtenerStockMinimo(productoSeleccionado) ?? 0, { minimo: 0 })
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar el producto")
+      return
+    }
 
     const cantidadEntrada = esAdministrador ? Number(formulario.stockActual) : 0
-    const motivoEntrada = formulario.motivoEntrada || "Compra"
+    const motivoEntrada = textoSeguro(formulario.motivoEntrada || "Compra", 80)
     const observacionEntrada = formulario.observacionEntrada
-      ? `${motivoEntrada}: ${formulario.observacionEntrada}`
+      ? textoLargoSeguro(`${motivoEntrada}: ${formulario.observacionEntrada}`)
       : motivoEntrada
     const stockMinimoProducto = esAdministrador
       ? Number(formulario.stockMinimo)
       : Number(productoEditando?.stockMinimo ?? obtenerStockMinimo(productoSeleccionado) ?? 0)
     const datosProducto = {
-      nombre: formulario.nombre,
+      nombre: textoSeguro(formulario.nombre, 160),
       categoria: formulario.categoria,
-      tipo: formulario.tipo,
-      variante: formulario.variante,
+      tipo: textoSeguro(formulario.tipo, 160),
+      variante: textoSeguro(formulario.variante, 120),
       unidad: formulario.unidad,
       stockMinimo: stockMinimoProducto,
-      ubicacion: formulario.ubicacion,
+      ubicacion: textoSeguro(formulario.ubicacion, 160),
       estado: formulario.estado,
     }
 
@@ -1718,7 +1734,7 @@ function App() {
   async function registrarMovimiento(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarMovimientos, "Tu rol no permite registrar movimientos de inventario.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("movimiento")) return
 
     if (!productoMovimiento) {
       mostrarMensaje("Selecciona un producto para registrar el movimiento.")
@@ -1731,7 +1747,7 @@ function App() {
     }
 
     const cantidad = Number(movimiento.cantidad)
-    const observacionMovimiento = movimiento.observacion.trim()
+    const observacionMovimiento = textoLargoSeguro(movimiento.observacion)
     const esSalida = movimiento.tipoMovimiento === "Ajuste negativo"
     const requiereObservacion = movimiento.tipoMovimiento.includes("Ajuste") ||
       movimiento.tipoMovimiento === "Devolución"
@@ -1741,6 +1757,11 @@ function App() {
 
     if (cantidad <= 0) {
       mostrarMensaje("La cantidad debe ser mayor a cero.")
+      return
+    }
+
+    if (!fechaIsoValida(movimiento.fecha)) {
+      mostrarMensaje("Selecciona una fecha válida.", "error")
       return
     }
 
@@ -1806,11 +1827,39 @@ function App() {
   async function registrarColaborador(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite registrar o editar colaboradores.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("colaborador")) return
+
+    const colaboradorSeguro = {
+      ...colaborador,
+      identificacion: textoSeguro(colaborador.identificacion, 40),
+      nombreCompleto: textoSeguro(colaborador.nombreCompleto, 160),
+      cargo: textoSeguro(colaborador.cargo, 120),
+      subArea: textoSeguro(colaborador.subArea, 120),
+      grupo: textoSeguro(colaborador.grupo, 40),
+      centroCostos: textoSeguro(colaborador.centroCostos, 40),
+      nombreCentroCostos: textoSeguro(colaborador.nombreCentroCostos, 160),
+      sexo: textoSeguro(colaborador.sexo, 40),
+      tallaAntifluido: textoSeguro(colaborador.tallaAntifluido, 20),
+      tallaBata: textoSeguro(colaborador.tallaBata, 20),
+      tallaCamisa: textoSeguro(colaborador.tallaCamisa, 20),
+      tallaPantalon: textoSeguro(colaborador.tallaPantalon, 20),
+      tallaBotas: textoSeguro(colaborador.tallaBotas, 20),
+    }
+
+    try {
+      validarCamposRequeridos([
+        { valor: colaboradorSeguro.identificacion, mensaje: "Escribe la identificación del colaborador." },
+        { valor: colaboradorSeguro.nombreCompleto, mensaje: "Escribe el nombre del colaborador." },
+        { valor: colaboradorSeguro.centroCostos, mensaje: "Selecciona el centro de costos." },
+      ])
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar el colaborador")
+      return
+    }
 
     const colaboradorExistente = colaboradores.find(
       (item) =>
-        item.identificacion === colaborador.identificacion &&
+        item.identificacion === colaboradorSeguro.identificacion &&
         item.id !== colaboradorEditandoId
     )
 
@@ -1826,7 +1875,7 @@ function App() {
         if (
           colaboradorEditandoTieneHistorial &&
           colaboradorEditando &&
-          colaborador.identificacion !== colaboradorEditando.identificacion
+          colaboradorSeguro.identificacion !== colaboradorEditando.identificacion
         ) {
           mostrarMensaje("No se puede cambiar la identificación de un colaborador con entregas registradas.", "error")
           return
@@ -1834,7 +1883,7 @@ function App() {
 
         const colaboradorActualizado = await guardarColaboradorRpc({
           colaboradorId: colaboradorEditandoId,
-          colaboradorPayload: colaborador,
+          colaboradorPayload: colaboradorSeguro,
         })
 
         setColaboradores(
@@ -1849,7 +1898,7 @@ function App() {
       }
 
       const colaboradorCreado = await guardarColaboradorRpc({
-        colaboradorPayload: colaborador,
+        colaboradorPayload: colaboradorSeguro,
       })
 
       setColaboradores([...colaboradores, colaboradorCreado])
@@ -1865,7 +1914,7 @@ function App() {
   async function registrarEntrega(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite registrar entregas.")) return
-    if (accionGuardando) return
+    if (accionGuardando || !accionPermitida("entrega", 1800)) return
 
     if (!colaboradorEntrega) {
       mostrarMensaje("Selecciona colaborador para registrar la entrega.")
@@ -1882,12 +1931,17 @@ function App() {
       return
     }
 
-    if (!entrega.responsable.trim()) {
-      mostrarMensaje("Escribe el responsable de la entrega.", "error")
+    if (!fechaIsoValida(entrega.fecha)) {
+      mostrarMensaje("Selecciona una fecha válida para la entrega.", "error")
       return
     }
 
-    if (["Deterioro", "Cambio de talla", "Pérdida"].includes(entrega.motivo) && entrega.observacion.trim().length < 8) {
+    if (!textoSeguro(entrega.responsable, 160)) {
+      mostrarMensaje("Selecciona el responsable de la entrega.", "error")
+      return
+    }
+
+    if (["Deterioro", "Cambio de talla", "Pérdida"].includes(entrega.motivo) && textoLargoSeguro(entrega.observacion).length < 8) {
       mostrarMensaje("Para deterioro, cambio de talla o pérdida debes escribir una observación clara.", "error")
       return
     }
@@ -2015,12 +2069,14 @@ function App() {
 
     const { entregaId, entregaSeleccionada } = anulacionPendiente
 
+    if (!accionPermitida(`anular-${entregaId}`, 2500)) return
+
     setAccionGuardando(`anular-${entregaId}`)
 
     try {
       const anulacion = await anularComprobanteRpc({
         entregaId,
-        motivoAnulacion: motivo,
+        motivoAnulacion: textoLargoSeguro(motivo),
       })
       const stockPorProducto = new Map(
         anulacion.productos.map((producto) => [
@@ -2317,9 +2373,22 @@ function App() {
       return
     }
 
+    if (!accionPermitida("importar-colaboradores", 3000)) {
+      evento.target.value = ""
+      return
+    }
+
     const archivo = evento.target.files?.[0]
 
     if (!archivo) return
+
+    try {
+      validarArchivoCsv(archivo)
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar el archivo")
+      evento.target.value = ""
+      return
+    }
 
     const lector = new FileReader()
 
@@ -2349,8 +2418,8 @@ function App() {
           const centroPorNombre = centrosCostos.find(
             (centro) => normalizarTexto(centro.nombre) === normalizarTexto(nombreCentro)
           )
-          const identificacion = obtenerValor(fila, ["Identificación", "Identificacion", "Cédula", "Cedula"])
-          const nombreCompleto = obtenerValor(fila, ["Nombre completo", "Nombre"])
+          const identificacion = textoSeguro(obtenerValor(fila, ["Identificación", "Identificacion", "Cédula", "Cedula"]), 40)
+          const nombreCompleto = textoSeguro(obtenerValor(fila, ["Nombre completo", "Nombre"]), 160)
 
           if (!identificacion || !nombreCompleto) {
             return null
@@ -2359,18 +2428,18 @@ function App() {
           return {
             identificacion,
             nombreCompleto,
-            cargo: obtenerValor(fila, ["Cargo"]) || "Sin cargo",
-            subArea: obtenerValor(fila, ["Sub-Área", "Sub area", "Subarea"]) || "",
-            grupo: obtenerValor(fila, ["Grupo"]) || "",
-            centroCostos: obtenerValor(fila, ["Centro de costos", "Centro costos", "Ceco"]) || centroPorNombre?.codigo || "",
-            nombreCentroCostos: nombreCentro || centroPorNombre?.nombre || "",
-            sexo: obtenerValor(fila, ["Sexo"]) || "Femenino",
-            estado: obtenerValor(fila, ["Estado"]) || "Activo",
-            tallaAntifluido: obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A",
-            tallaBata: obtenerValor(fila, ["Talla de bata", "Talla bata"]) || "N/A",
-            tallaCamisa: obtenerValor(fila, ["Talla camisa", "Talla de camisa"]) || "N/A",
-            tallaPantalon: obtenerValor(fila, ["Talla pantalón", "Talla pantalon", "Talla de pantalón", "Talla de pantalon"]) || "N/A",
-            tallaBotas: obtenerValor(fila, ["Talla de botas", "Talla botas", "Talla bota"]) || "",
+            cargo: textoSeguro(obtenerValor(fila, ["Cargo"]) || "Sin cargo", 120),
+            subArea: textoSeguro(obtenerValor(fila, ["Sub-Área", "Sub area", "Subarea"]) || "", 120),
+            grupo: textoSeguro(obtenerValor(fila, ["Grupo"]) || "", 40),
+            centroCostos: textoSeguro(obtenerValor(fila, ["Centro de costos", "Centro costos", "Ceco"]) || centroPorNombre?.codigo || "", 40),
+            nombreCentroCostos: textoSeguro(nombreCentro || centroPorNombre?.nombre || "", 160),
+            sexo: textoSeguro(obtenerValor(fila, ["Sexo"]) || "Femenino", 40),
+            estado: textoSeguro(obtenerValor(fila, ["Estado"]) || "Activo", 20),
+            tallaAntifluido: textoSeguro(obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A", 20),
+            tallaBata: textoSeguro(obtenerValor(fila, ["Talla de bata", "Talla bata"]) || "N/A", 20),
+            tallaCamisa: textoSeguro(obtenerValor(fila, ["Talla camisa", "Talla de camisa"]) || "N/A", 20),
+            tallaPantalon: textoSeguro(obtenerValor(fila, ["Talla pantalón", "Talla pantalon", "Talla de pantalón", "Talla de pantalon"]) || "N/A", 20),
+            tallaBotas: textoSeguro(obtenerValor(fila, ["Talla de botas", "Talla botas", "Talla bota"]) || "", 20),
           }
         })
         .filter(Boolean)

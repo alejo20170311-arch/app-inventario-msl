@@ -39,6 +39,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
     <html>
       <head>
         <meta charset="UTF-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${window.location.origin}; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'" />
         <title>Comprobante de entrega</title>
         <style>
           * { box-sizing: border-box; }
@@ -255,7 +256,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
       </head>
       <body>
         <div class="acciones">
-          <button onclick="window.print()">Imprimir / Guardar PDF</button>
+          <button id="imprimir-comprobante" type="button">Imprimir / Guardar PDF</button>
         </div>
         <main class="pagina">
           <div class="marca-estado">${valorSeguro(estadoComprobante).toUpperCase()}</div>
@@ -349,5 +350,8 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
   ventana.document.open()
   ventana.document.write(contenido)
   ventana.document.close()
+  ventana.document
+    .getElementById("imprimir-comprobante")
+    ?.addEventListener("click", () => ventana.print())
   return true
 }
