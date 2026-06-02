@@ -1211,7 +1211,7 @@ begin
   if p_lineas is null
      or jsonb_typeof(p_lineas) <> 'array'
      or jsonb_array_length(p_lineas) = 0 then
-    raise exception 'Debes enviar al menos una lÃ­nea de compra.';
+    raise exception 'Debes enviar al menos una línea de compra.';
   end if;
 
   v_numero_factura := nullif(trim(p_compra->>'numero_factura'), '');
@@ -1221,7 +1221,7 @@ begin
   v_observacion := nullif(trim(coalesce(p_compra->>'observacion', '')), '');
 
   if v_numero_factura is null then
-    raise exception 'El nÃºmero de factura es obligatorio.';
+    raise exception 'El número de factura es obligatorio.';
   end if;
 
   if v_fecha is null then
@@ -1272,7 +1272,7 @@ begin
     )
   loop
     if v_linea.producto_id is null then
-      raise exception 'Una lÃ­nea no tiene producto.';
+      raise exception 'Una línea no tiene producto.';
     end if;
 
     if v_linea.cantidad is null or v_linea.cantidad <= 0 then
@@ -1294,7 +1294,7 @@ begin
     end if;
 
     if v_producto.estado <> 'Activo' then
-      raise exception 'El producto % estÃ¡ inactivo.', v_producto.nombre;
+      raise exception 'El producto % está inactivo.', v_producto.nombre;
     end if;
 
     update public.productos
