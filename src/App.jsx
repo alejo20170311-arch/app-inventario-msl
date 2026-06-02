@@ -905,6 +905,8 @@ function App() {
       accion,
       codigo: error?.code,
       nombre: error?.name,
+      mensaje: error?.message,
+      estado: error?.statusCode || error?.status,
     })
     mostrarMensaje(`No se pudo ${accion}: ${mensajeSeguroError(error)}`, "error")
   }

@@ -186,6 +186,9 @@ export async function adjuntarFacturaCompraRpc({
   })
 
   if (error) throw error
+  if (!data) {
+    throw new Error("No se pudo asociar la factura a la compra. Verifica permisos y que la compra exista.")
+  }
 
   return compraDesdeSupabase(data)
 }

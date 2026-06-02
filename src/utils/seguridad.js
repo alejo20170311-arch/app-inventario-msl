@@ -71,9 +71,33 @@ export function validarArchivoCsv(archivo) {
 
 export function mensajeSeguroError(error) {
   const mensaje = String(error?.message || error || "").toLowerCase()
+  const codigo = String(error?.code || error?.statusCode || error?.status || "").toLowerCase()
 
-  if (mensaje.includes("row-level security") || mensaje.includes("permission denied")) {
+  if (
+    mensaje.includes("row-level security") ||
+    mensaje.includes("permission denied") ||
+    mensaje.includes("new row violates row-level security policy") ||
+    mensaje.includes("unauthorized") ||
+    codigo === "401" ||
+    codigo === "403"
+  ) {
     return "tu rol no tiene permiso para esta acción."
+  }
+
+  if (mensaje.includes("bucket not found") || mensaje.includes("bucket does not exist")) {
+    return "falta configurar el bucket de facturas en Supabase."
+  }
+
+  if (mensaje.includes("mime type") || mensaje.includes("invalid file type") || mensaje.includes("not allowed")) {
+    return "el tipo de archivo no está permitido para facturas."
+  }
+
+  if (mensaje.includes("file size") || mensaje.includes("payload too large") || codigo === "413") {
+    return "el archivo supera el tamaño permitido."
+  }
+
+  if (mensaje.includes("no se pudo asociar la factura")) {
+    return error.message
   }
 
   if (mensaje.includes("duplicate key") || mensaje.includes("unique constraint")) {
