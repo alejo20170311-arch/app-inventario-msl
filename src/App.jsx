@@ -185,6 +185,25 @@ function formatearDinero(valor) {
   })
 }
 
+function obtenerTipoFactura(archivo) {
+  const nombre = String(archivo?.name || "").toLowerCase()
+  const tipo = String(archivo?.type || "").toLowerCase()
+
+  if (tipo === "application/pdf" || nombre.endsWith(".pdf")) {
+    return "application/pdf"
+  }
+
+  if (tipo.startsWith("image/")) {
+    return tipo
+  }
+
+  if (nombre.endsWith(".jpg") || nombre.endsWith(".jpeg")) return "image/jpeg"
+  if (nombre.endsWith(".png")) return "image/png"
+  if (nombre.endsWith(".webp")) return "image/webp"
+
+  return ""
+}
+
 function App() {
   const accionesRecientes = useRef(new Map())
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
