@@ -2627,37 +2627,69 @@ function App() {
   }
 
   function exportarFormatoCompra() {
-    descargarXlsx("formato-compra-msl.xlsx", [{
-      nombre: "Compra",
-      columnas: [
-        { titulo: "factura", campo: "factura" },
-        { titulo: "fecha", campo: "fecha" },
-        { titulo: "proveedor", campo: "proveedor" },
-        { titulo: "responsable", campo: "responsable" },
-        { titulo: "categoria", campo: "categoria" },
-        { titulo: "producto", campo: "producto" },
-        { titulo: "tipo", campo: "tipo" },
-        { titulo: "variante", campo: "variante" },
-        { titulo: "unidad", campo: "unidad" },
-        { titulo: "cantidad", campo: "cantidad" },
-        { titulo: "valor unitario", campo: "valorUnitario" },
-        { titulo: "observacion", campo: "observacion" },
-      ],
-      filas: [{
-        factura: "FAC-001",
-        fecha: fechaLocalISO(),
-        proveedor: "Proveedor",
-        responsable: perfil?.nombre || "",
-        categoria: "Dotación",
-        producto: "Bota de seguridad",
-        tipo: "Calzado",
-        variante: "38",
-        unidad: "Par",
-        cantidad: 1,
-        valorUnitario: 0,
-        observacion: "",
-      }],
-    }])
+    const productoEjemplo = productos.find((producto) => producto.estado === "Activo") || productos[0]
+    const columnasCompra = [
+      { titulo: "factura", campo: "factura" },
+      { titulo: "fecha", campo: "fecha" },
+      { titulo: "proveedor", campo: "proveedor" },
+      { titulo: "responsable", campo: "responsable" },
+      { titulo: "categoria", campo: "categoria" },
+      { titulo: "producto", campo: "producto" },
+      { titulo: "tipo", campo: "tipo" },
+      { titulo: "variante", campo: "variante" },
+      { titulo: "unidad", campo: "unidad" },
+      { titulo: "cantidad", campo: "cantidad" },
+      { titulo: "valor unitario", campo: "valorUnitario" },
+      { titulo: "observacion", campo: "observacion" },
+    ]
+    const filasReferencia = productos
+      .slice()
+      .sort((a, b) =>
+        `${a.categoria} ${a.nombre} ${a.tipo} ${a.variante}`.localeCompare(`${b.categoria} ${b.nombre} ${b.tipo} ${b.variante}`)
+      )
+      .map((producto) => ({
+        categoria: producto.categoria,
+        producto: producto.nombre,
+        tipo: producto.tipo,
+        variante: producto.variante,
+        unidad: producto.unidad,
+        stockActual: producto.stockActual,
+        estado: producto.estado,
+      }))
+
+    descargarXlsx("formato-compra-msl.xlsx", [
+      {
+        nombre: "Compra",
+        columnas: columnasCompra,
+        filas: [{
+          factura: "FAC-001",
+          fecha: fechaLocalISO(),
+          proveedor: "Proveedor",
+          responsable: perfil?.nombre || "",
+          categoria: productoEjemplo?.categoria || "",
+          producto: productoEjemplo?.nombre || "",
+          tipo: productoEjemplo?.tipo || "",
+          variante: productoEjemplo?.variante || "",
+          unidad: productoEjemplo?.unidad || "",
+          cantidad: 1,
+          valorUnitario: 0,
+          observacion: "",
+        }],
+      },
+      {
+        nombre: "Datos creados",
+        columnas: [
+          { titulo: "categoria", campo: "categoria" },
+          { titulo: "producto", campo: "producto" },
+          { titulo: "tipo", campo: "tipo" },
+          { titulo: "variante", campo: "variante" },
+          { titulo: "unidad", campo: "unidad" },
+          { titulo: "stock actual", campo: "stockActual" },
+          { titulo: "estado", campo: "estado" },
+        ],
+        filas: filasReferencia,
+      },
+    ])
   }
 
   function exportarMovimientos() {
@@ -3572,6 +3604,7 @@ function App() {
                     onChange={(valor) => actualizarLineaCompra("productoId", valor)}
                     options={opcionesProductosCompra}
                     placeholder="Selecciona producto existente"
+                    soloLista
                     style={campoFormulario}
                   />
                 </Campo>
