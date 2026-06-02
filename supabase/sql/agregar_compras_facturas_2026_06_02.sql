@@ -1,5 +1,5 @@
--- Agrega compras agrupadas por factura, líneas de compra y adjuntos.
--- Ejecutar en Supabase SQL Editor antes de usar el módulo de Compras.
+﻿-- Compras por factura para Inventario MSL.
+-- Version sin PL/pgSQL para evitar que el SQL Editor corte funciones por punto y coma internos.
 
 create table if not exists public.compras (
   id uuid primary key default gen_random_uuid(),
@@ -70,82 +70,78 @@ create or replace function public.registrar_compra_rpc(
   p_lineas jsonb
 )
 returns jsonb
-language plpgsql
+language sql
 security definer
 set search_path = public
-as $$
-declare
-  v_usuario_id uuid := auth.uid();
-  v_rol text;
-  v_compra public.compras%rowtype;
-  v_linea record;
-  v_producto public.productos%rowtype;
-  v_producto_actualizado public.productos%rowtype;
-  v_linea_compra public.compra_lineas%rowtype;
-  v_movimiento public.movimientos%rowtype;
-  v_numero_factura text;
-  v_fecha date;
-  v_proveedor text;
-  v_responsable text;
-  v_observacion text;
-  v_lineas jsonb := '[]'::jsonb;
-  v_movimientos jsonb := '[]'::jsonb;
-  v_productos jsonb := '[]'::jsonb;
-begin
-  if v_usuario_id is null then
-    raise exception 'Usuario no autenticado.';
-  end if;
-
-  select rol
-  into v_rol
-  from public.perfiles
-  where id = v_usuario_id
-    and estado = 'Activo';
-
-  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
-    raise exception 'No tienes permiso para registrar compras.';
-  end if;
-
-  if p_compra is null or jsonb_typeof(p_compra) <> 'object' then
-    raise exception 'Debes enviar los datos de la compra.';
-  end if;
-
-  if p_lineas is null
-     or jsonb_typeof(p_lineas) <> 'array'
-     or jsonb_array_length(p_lineas) = 0 then
-    raise exception 'Debes enviar al menos una línea de compra.';
-  end if;
-
-  v_numero_factura := nullif(trim(p_compra->>'numero_factura'), '');
-  v_fecha := nullif(p_compra->>'fecha', '')::date;
-  v_proveedor := nullif(trim(p_compra->>'proveedor'), '');
-  v_responsable := nullif(trim(p_compra->>'responsable'), '');
-  v_observacion := nullif(trim(coalesce(p_compra->>'observacion', '')), '');
-
-  if v_numero_factura is null then
-    raise exception 'El número de factura es obligatorio.';
-  end if;
-
-  if v_fecha is null then
-    raise exception 'La fecha de factura es obligatoria.';
-  end if;
-
-  if v_proveedor is null then
-    raise exception 'El proveedor es obligatorio.';
-  end if;
-
-  if v_responsable is null then
-    raise exception 'El responsable es obligatorio.';
-  end if;
-
-  if exists (
+return (
+with
+entrada as (
+  select
+    auth.uid() as usuario_id,
+    nullif(trim(p_compra->>'numero_factura'), '') as numero_factura,
+    nullif(p_compra->>'fecha', '')::date as fecha,
+    nullif(trim(p_compra->>'proveedor'), '') as proveedor,
+    nullif(trim(p_compra->>'responsable'), '') as responsable,
+    nullif(trim(coalesce(p_compra->>'observacion', '')), '') as observacion
+),
+permiso as (
+  select exists (
     select 1
-    from public.compras
-    where lower(numero_factura) = lower(v_numero_factura)
-  ) then
-    raise exception 'Ya existe una compra con esa factura.';
-  end if;
-
+    from public.perfiles p
+    join entrada e on p.id = e.usuario_id
+    where p.estado = 'Activo'
+      and p.rol in ('Administrador', 'Gestion Humana', 'Bodega')
+  ) as permitido
+),
+lineas_raw as (
+  select
+    x.producto_id,
+    x.cantidad,
+    coalesce(x.valor_unitario, 0) as valor_unitario,
+    nullif(trim(coalesce(x.observacion, '')), '') as observacion
+  from jsonb_to_recordset(coalesce(p_lineas, '[]'::jsonb)) as x(
+    producto_id uuid,
+    cantidad integer,
+    valor_unitario numeric,
+    observacion text
+  )
+),
+lineas_producto as (
+  select
+    lr.producto_id,
+    lr.cantidad,
+    lr.valor_unitario,
+    lr.observacion,
+    p.nombre,
+    p.categoria,
+    p.tipo,
+    p.variante,
+    p.unidad
+  from lineas_raw lr
+  join public.productos p on p.id = lr.producto_id
+  where p.estado = 'Activo'
+    and lr.cantidad > 0
+    and lr.valor_unitario >= 0
+),
+validacion as (
+  select
+    e.usuario_id is not null
+    and (select permitido from permiso)
+    and e.numero_factura is not null
+    and e.fecha is not null
+    and e.proveedor is not null
+    and e.responsable is not null
+    and jsonb_typeof(coalesce(p_lineas, 'null'::jsonb)) = 'array'
+    and (select count(*) from lineas_raw) > 0
+    and (select count(*) from lineas_raw) = (select count(*) from lineas_producto)
+    and not exists (
+      select 1
+      from public.compras c
+      where lower(c.numero_factura) = lower(e.numero_factura)
+    ) as ok
+  from entrada e
+),
+compra_insertada as (
   insert into public.compras (
     numero_factura,
     fecha,
@@ -154,122 +150,106 @@ begin
     observacion,
     creado_por
   )
-  values (
-    v_numero_factura,
-    v_fecha,
-    v_proveedor,
-    v_responsable,
-    v_observacion,
-    v_usuario_id
+  select
+    e.numero_factura,
+    e.fecha,
+    e.proveedor,
+    e.responsable,
+    e.observacion,
+    e.usuario_id
+  from entrada e
+  cross join validacion v
+  where v.ok
+  returning *
+),
+cantidades as (
+  select producto_id, sum(cantidad)::integer as cantidad_total
+  from lineas_producto
+  group by producto_id
+),
+productos_actualizados as (
+  update public.productos p
+  set stock_actual = p.stock_actual + c.cantidad_total
+  from cantidades c
+  where p.id = c.producto_id
+    and exists (select 1 from compra_insertada)
+  returning p.*
+),
+lineas_insertadas as (
+  insert into public.compra_lineas (
+    compra_id,
+    producto_id,
+    producto,
+    categoria,
+    tipo,
+    variante,
+    unidad,
+    cantidad,
+    valor_unitario,
+    observacion,
+    stock_resultante
   )
-  returning * into v_compra;
-
-  for v_linea in
-    select *
-    from jsonb_to_recordset(p_lineas) as x(
-      producto_id uuid,
-      cantidad integer,
-      valor_unitario numeric,
-      observacion text
-    )
-  loop
-    if v_linea.producto_id is null then
-      raise exception 'Una línea no tiene producto.';
-    end if;
-
-    if v_linea.cantidad is null or v_linea.cantidad <= 0 then
-      raise exception 'La cantidad debe ser mayor a cero.';
-    end if;
-
-    if coalesce(v_linea.valor_unitario, 0) < 0 then
-      raise exception 'El valor unitario no puede ser negativo.';
-    end if;
-
-    select *
-    into v_producto
-    from public.productos
-    where id = v_linea.producto_id
-    for update;
-
-    if not found then
-      raise exception 'El producto % no existe.', v_linea.producto_id;
-    end if;
-
-    if v_producto.estado <> 'Activo' then
-      raise exception 'El producto % está inactivo.', v_producto.nombre;
-    end if;
-
-    update public.productos
-    set stock_actual = stock_actual + v_linea.cantidad
-    where id = v_producto.id
-    returning * into v_producto_actualizado;
-
-    insert into public.compra_lineas (
-      compra_id,
-      producto_id,
-      producto,
-      categoria,
-      tipo,
-      variante,
-      unidad,
-      cantidad,
-      valor_unitario,
-      observacion,
-      stock_resultante
-    )
-    values (
-      v_compra.id,
-      v_producto.id,
-      v_producto.nombre,
-      v_producto.categoria,
-      v_producto.tipo,
-      v_producto.variante,
-      v_producto.unidad,
-      v_linea.cantidad,
-      coalesce(v_linea.valor_unitario, 0),
-      nullif(trim(coalesce(v_linea.observacion, '')), ''),
-      v_producto_actualizado.stock_actual
-    )
-    returning * into v_linea_compra;
-
-    insert into public.movimientos (
-      producto_id,
-      producto,
-      variante,
-      unidad,
-      tipo_movimiento,
-      cantidad,
-      fecha,
-      observacion,
-      stock_resultante,
-      creado_por
-    )
-    values (
-      v_producto.id,
-      v_producto.nombre,
-      v_producto.variante,
-      v_producto.unidad,
-      'Compra',
-      v_linea.cantidad,
-      v_fecha,
-      'Compra factura ' || v_numero_factura || '. Proveedor: ' || v_proveedor,
-      v_producto_actualizado.stock_actual,
-      v_usuario_id
-    )
-    returning * into v_movimiento;
-
-    v_lineas := v_lineas || jsonb_build_array(to_jsonb(v_linea_compra));
-    v_movimientos := v_movimientos || jsonb_build_array(to_jsonb(v_movimiento));
-    v_productos := v_productos || jsonb_build_array(to_jsonb(v_producto_actualizado));
-  end loop;
-
-  return jsonb_build_object(
-    'compra', to_jsonb(v_compra) || jsonb_build_object('compra_lineas', v_lineas),
-    'movimientos', v_movimientos,
-    'productos', v_productos
-  );
-end;
-$$;
+  select
+    ci.id,
+    lp.producto_id,
+    lp.nombre,
+    lp.categoria,
+    lp.tipo,
+    lp.variante,
+    lp.unidad,
+    lp.cantidad,
+    lp.valor_unitario,
+    lp.observacion,
+    pa.stock_actual
+  from compra_insertada ci
+  join lineas_producto lp on true
+  join productos_actualizados pa on pa.id = lp.producto_id
+  returning *
+),
+movimientos_insertados as (
+  insert into public.movimientos (
+    producto_id,
+    producto,
+    variante,
+    unidad,
+    tipo_movimiento,
+    cantidad,
+    fecha,
+    observacion,
+    stock_resultante,
+    creado_por
+  )
+  select
+    li.producto_id,
+    li.producto,
+    li.variante,
+    li.unidad,
+    'Compra',
+    li.cantidad,
+    ci.fecha,
+    'Compra factura ' || ci.numero_factura || '. Proveedor: ' || ci.proveedor,
+    li.stock_resultante,
+    ci.creado_por
+  from lineas_insertadas li
+  join compra_insertada ci on ci.id = li.compra_id
+  returning *
+)
+select jsonb_build_object(
+  'compra',
+  case
+    when exists (select 1 from compra_insertada) then
+      (select to_jsonb(ci) || jsonb_build_object(
+        'compra_lineas',
+        coalesce((select jsonb_agg(to_jsonb(li) order by li.creado_en) from lineas_insertadas li), '[]'::jsonb)
+      ) from compra_insertada ci)
+    else null
+  end,
+  'movimientos',
+  coalesce((select jsonb_agg(to_jsonb(mi) order by mi.creado_en) from movimientos_insertados mi), '[]'::jsonb),
+  'productos',
+  coalesce((select jsonb_agg(to_jsonb(pa) order by pa.nombre) from productos_actualizados pa), '[]'::jsonb)
+)
+);
 
 create or replace function public.adjuntar_factura_compra_rpc(
   p_compra_id uuid,
@@ -277,58 +257,47 @@ create or replace function public.adjuntar_factura_compra_rpc(
   p_factura_ruta text
 )
 returns jsonb
-language plpgsql
+language sql
 security definer
 set search_path = public
-as $$
-declare
-  v_usuario_id uuid := auth.uid();
-  v_rol text;
-  v_compra public.compras%rowtype;
-  v_lineas jsonb;
-begin
-  if v_usuario_id is null then
-    raise exception 'Usuario no autenticado.';
-  end if;
-
-  select rol
-  into v_rol
-  from public.perfiles
-  where id = v_usuario_id
-    and estado = 'Activo';
-
-  if v_rol not in ('Administrador', 'Gestion Humana', 'Bodega') then
-    raise exception 'No tienes permiso para adjuntar facturas.';
-  end if;
-
-  if p_compra_id is null then
-    raise exception 'Debes seleccionar una compra.';
-  end if;
-
-  if nullif(trim(coalesce(p_factura_url, '')), '') is null
-     and nullif(trim(coalesce(p_factura_ruta, '')), '') is null then
-    raise exception 'Debes enviar la factura adjunta.';
-  end if;
-
-  update public.compras
+return (
+with
+permiso as (
+  select exists (
+    select 1
+    from public.perfiles p
+    where p.id = auth.uid()
+      and p.estado = 'Activo'
+      and p.rol in ('Administrador', 'Gestion Humana', 'Bodega')
+  ) as permitido
+),
+compra_actualizada as (
+  update public.compras c
   set
     factura_url = nullif(trim(coalesce(p_factura_url, '')), ''),
     factura_ruta = nullif(trim(coalesce(p_factura_ruta, '')), '')
-  where id = p_compra_id
-  returning * into v_compra;
-
-  if not found then
-    raise exception 'La compra no existe.';
-  end if;
-
-  select coalesce(jsonb_agg(to_jsonb(linea) order by linea.creado_en), '[]'::jsonb)
-  into v_lineas
-  from public.compra_lineas linea
-  where linea.compra_id = v_compra.id;
-
-  return to_jsonb(v_compra) || jsonb_build_object('compra_lineas', v_lineas);
-end;
-$$;
+  where c.id = p_compra_id
+    and (select permitido from permiso)
+    and (
+      nullif(trim(coalesce(p_factura_url, '')), '') is not null
+      or nullif(trim(coalesce(p_factura_ruta, '')), '') is not null
+    )
+  returning *
+)
+select
+  case
+    when exists (select 1 from compra_actualizada) then
+      (select to_jsonb(ca) || jsonb_build_object(
+        'compra_lineas',
+        coalesce((
+          select jsonb_agg(to_jsonb(cl) order by cl.creado_en)
+          from public.compra_lineas cl
+          where cl.compra_id = ca.id
+        ), '[]'::jsonb)
+      ) from compra_actualizada ca)
+    else null
+  end
+);
 
 grant execute on function public.registrar_compra_rpc(jsonb, jsonb) to authenticated;
 grant execute on function public.adjuntar_factura_compra_rpc(uuid, text, text) to authenticated;
