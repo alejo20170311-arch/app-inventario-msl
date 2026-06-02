@@ -206,6 +206,47 @@ function obtenerTipoFactura(archivo) {
   return ""
 }
 
+const BUCKET_FACTURAS_COMPRAS = "facturas-compras"
+
+function normalizarRutaFacturaCompra(ruta) {
+  const valor = String(ruta || "").trim()
+
+  if (!valor) return ""
+
+  try {
+    const url = new URL(valor)
+    const marca = `/object/sign/${BUCKET_FACTURAS_COMPRAS}/`
+    const indice = url.pathname.indexOf(marca)
+
+    if (indice >= 0) {
+      return decodeURIComponent(url.pathname.slice(indice + marca.length))
+    }
+  } catch {
+    // Si no es una URL completa, se trata como ruta interna del bucket.
+  }
+
+  return valor
+    .replace(/^\/+/, "")
+    .replace(new RegExp(`^${BUCKET_FACTURAS_COMPRAS}/`), "")
+}
+
+function nombreArchivoFactura(compraItem, archivo) {
+  const extensionDetectada = archivo.name.split(".").pop()?.toLowerCase()
+  const extension = ["pdf", "jpg", "jpeg", "png", "webp"].includes(extensionDetectada)
+    ? extensionDetectada
+    : "pdf"
+  const factura = normalizarTexto(compraItem.numeroFactura) || "factura"
+
+  return `${Date.now()}-${factura}.${extension}`
+}
+
+function facturaCompraVisible(compraItem) {
+  const ruta = normalizarRutaFacturaCompra(compraItem?.facturaRuta)
+  const url = String(compraItem?.facturaUrl || "").trim()
+
+  return Boolean(ruta || (url && !url.startsWith("blob:")))
+}
+
 function App() {
   const accionesRecientes = useRef(new Map())
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
@@ -1997,15 +2038,14 @@ function App() {
     setAccionGuardando(`factura-${compraItem.id}`)
 
     try {
-      const extension = archivo.name.split(".").pop()?.toLowerCase() || "pdf"
-      const nombreSeguro = `${Date.now()}-${normalizarTexto(compraItem.numeroFactura) || "factura"}.${extension}`
+      const nombreSeguro = nombreArchivoFactura(compraItem, archivo)
       const ruta = `${compraItem.id}/${nombreSeguro}`
       const { error: errorStorage } = await supabase.storage
-        .from("facturas-compras")
+        .from(BUCKET_FACTURAS_COMPRAS)
         .upload(ruta, archivo, {
           cacheControl: "3600",
           contentType: tipoFactura,
-          upsert: true,
+          upsert: false,
         })
 
       if (errorStorage) throw errorStorage
@@ -2028,26 +2068,41 @@ function App() {
   }
 
   async function abrirFacturaCompra(compraItem) {
-    if (!compraItem.facturaRuta && !compraItem.facturaUrl) {
+    if (!facturaCompraVisible(compraItem)) {
       mostrarMensaje("Esta compra todavía no tiene factura adjunta.", "error")
       return
     }
 
-    if (compraItem.facturaRuta) {
+    const ventanaFactura = window.open("", "_blank")
+    if (ventanaFactura) {
+      ventanaFactura.opener = null
+    }
+    const rutaFactura = normalizarRutaFacturaCompra(compraItem.facturaRuta)
+
+    if (rutaFactura) {
       const { data, error } = await supabase.storage
-        .from("facturas-compras")
-        .createSignedUrl(compraItem.facturaRuta, 3600)
+        .from(BUCKET_FACTURAS_COMPRAS)
+        .createSignedUrl(rutaFactura, 3600)
 
       if (error || !data?.signedUrl) {
+        ventanaFactura?.close()
         mostrarErrorSupabase(error, "abrir la factura")
         return
       }
 
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
+      if (ventanaFactura) {
+        ventanaFactura.location.href = data.signedUrl
+      } else {
+        mostrarMensaje("El navegador bloqueó la ventana de la factura. Permite ventanas emergentes para esta app.", "error")
+      }
       return
     }
 
-    window.open(compraItem.facturaUrl, "_blank", "noopener,noreferrer")
+    if (ventanaFactura) {
+      ventanaFactura.location.href = compraItem.facturaUrl
+    } else {
+      mostrarMensaje("El navegador bloqueó la ventana de la factura. Permite ventanas emergentes para esta app.", "error")
+    }
   }
 
   function abrirCompra(compraItem) {
@@ -2079,8 +2134,8 @@ function App() {
 
       if (resultado.facturaRuta) {
         await supabase.storage
-          .from("facturas-compras")
-          .remove([resultado.facturaRuta])
+          .from(BUCKET_FACTURAS_COMPRAS)
+          .remove([normalizarRutaFacturaCompra(resultado.facturaRuta)])
       }
 
       const productosActualizados = new Map(
@@ -4038,7 +4093,7 @@ function App() {
                         </td>
                         <td style={celdaTabla}>{totalItemsCompra}</td>
                         <td style={celdaTabla}>
-                          {compraItem.facturaRuta || compraItem.facturaUrl ? (
+                          {facturaCompraVisible(compraItem) ? (
                             <button type="button" onClick={() => abrirFacturaCompra(compraItem)} style={botonEditar}>
                               <Paperclip size={16} />
                               Ver
