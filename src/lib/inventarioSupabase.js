@@ -205,6 +205,41 @@ export function entregaDesdeSupabase(item) {
   }
 }
 
+export function lineaCompraDesdeSupabase(item) {
+  return {
+    id: item.id,
+    compraId: item.compra_id,
+    productoId: item.producto_id,
+    producto: item.producto,
+    categoria: item.categoria,
+    tipo: item.tipo,
+    variante: item.variante,
+    unidad: item.unidad,
+    cantidad: numero(item.cantidad),
+    valorUnitario: numero(item.valor_unitario, 0),
+    observacion: texto(item.observacion),
+    stockResultante: numero(item.stock_resultante),
+  }
+}
+
+export function compraDesdeSupabase(item) {
+  return {
+    id: item.id,
+    numeroFactura: item.numero_factura,
+    fecha: item.fecha,
+    proveedor: item.proveedor,
+    responsable: item.responsable,
+    observacion: texto(item.observacion),
+    facturaUrl: texto(item.factura_url),
+    facturaRuta: texto(item.factura_ruta),
+    estado: item.estado || "Registrada",
+    creadoEn: item.creado_en,
+    lineas: Array.isArray(item.compra_lineas)
+      ? item.compra_lineas.map(lineaCompraDesdeSupabase)
+      : [],
+  }
+}
+
 async function cargarCatalogoProductos() {
   const { data, error } = await supabase
     .from("catalogo_productos")
@@ -215,6 +250,45 @@ async function cargarCatalogoProductos() {
   if (error) throw error
 
   return data.length > 0 ? data.map(catalogoDesdeSupabase) : catalogoProductosBase
+}
+
+async function cargarComprasInventario() {
+  const { data, error } = await supabase
+    .from("compras")
+    .select(`
+      id,
+      numero_factura,
+      fecha,
+      proveedor,
+      responsable,
+      observacion,
+      factura_url,
+      factura_ruta,
+      estado,
+      creado_en,
+      compra_lineas (
+        id,
+        compra_id,
+        producto_id,
+        producto,
+        categoria,
+        tipo,
+        variante,
+        unidad,
+        cantidad,
+        valor_unitario,
+        observacion,
+        stock_resultante
+      )
+    `)
+    .order("fecha", { ascending: false })
+    .order("creado_en", { ascending: false })
+
+  if (error) {
+    return []
+  }
+
+  return (data || []).map(compraDesdeSupabase)
 }
 
 function lanzarSiError(respuesta) {
@@ -232,6 +306,7 @@ export async function cargarDatosInventario() {
     colaboradoresRespuesta,
     movimientosRespuesta,
     entregasRespuesta,
+    compras,
   ] = await Promise.all([
     cargarCatalogoProductos(),
     supabase
@@ -281,6 +356,7 @@ export async function cargarDatosInventario() {
         )
       `)
       .order("creado_en", { ascending: false }),
+    cargarComprasInventario(),
   ])
 
   const productos = lanzarSiError(productosRespuesta).map(productoDesdeSupabase)
@@ -294,5 +370,6 @@ export async function cargarDatosInventario() {
     colaboradores,
     movimientos,
     entregas,
+    compras,
   }
 }

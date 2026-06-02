@@ -62,6 +62,7 @@ Scripts útiles:
 
 - `supabase/sql/configurar_avatar_storage.sql`: crea el bucket `avatars` para fotos de perfil.
 - `supabase/sql/actualizar_seguridad_responsables_2026_06_01.sql`: agrega responsables de entrega y cierra escrituras directas sensibles para que pasen por RPC.
+- `supabase/sql/agregar_compras_facturas_2026_06_02.sql`: agrega compras por factura, líneas de compra, adjuntos de factura y RPC transaccional.
 - `supabase/sql/actualizar_catalogo_epp_2026_05_29.sql`: actualización de catálogo EPP.
 - `supabase/sql/limpiar_pruebas_inventario.sql`: limpieza de datos de prueba.
 

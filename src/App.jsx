@@ -7,11 +7,15 @@ import {
   Boxes,
   ClipboardCheck,
   Download,
+  FileText,
   Home,
   KeyRound,
   Package,
+  Paperclip,
   Plus,
+  Printer,
   ShieldAlert,
+  Upload,
   UserRound,
   Users,
 } from "lucide-react"
@@ -42,6 +46,8 @@ import {
   guardarCatalogoProductoRpc,
   guardarColaboradorRpc,
   guardarProductoMovimientoRpc,
+  adjuntarFacturaCompraRpc,
+  registrarCompraRpc,
   registrarEntregaRpc,
 } from "./lib/operacionesInventario"
 import {
@@ -52,12 +58,14 @@ import {
 } from "./lib/perfilesSupabase"
 import { cargarResponsablesEntrega } from "./lib/responsablesSupabase"
 import { supabase } from "./lib/supabase"
+import { abrirComprobanteCompra } from "./utils/comprobanteCompra"
 import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
 import {
   crearAlertaDotacionEntrega,
   planearDotacionColaboradores,
 } from "./utils/dotacion"
 import { fechaLocalISO, mesLocalISO } from "./utils/fechas"
+import { leerFilasCompra } from "./utils/importacionCompras"
 import {
   coincideBusqueda,
   coincideFiltroColaborador,
@@ -71,6 +79,7 @@ import {
 } from "./utils/inventario"
 import {
   correoValido,
+  ErrorValidacion,
   fechaIsoValida,
   mensajeSeguroError,
   numeroSeguro,
@@ -147,12 +156,42 @@ function accionDentroDelLimite(registroAcciones, accion, esperaMs) {
   return true
 }
 
+function crearCompraVacia() {
+  return {
+    numeroFactura: "",
+    fecha: fechaLocalISO(),
+    proveedor: "",
+    responsable: "",
+    observacion: "",
+  }
+}
+
+const lineaCompraVacia = {
+  productoId: "",
+  cantidad: "",
+  valorUnitario: "",
+  observacion: "",
+}
+
+function formatearDinero(valor) {
+  const numero = Number(valor || 0)
+
+  if (!Number.isFinite(numero) || numero <= 0) return "-"
+
+  return numero.toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  })
+}
+
 function App() {
   const accionesRecientes = useRef(new Map())
   const [catalogoProductos, setCatalogoProductos] = useState(catalogoProductosBase)
   const [productos, setProductos] = useState([])
   const [movimientos, setMovimientos] = useState([])
   const [entregas, setEntregas] = useState([])
+  const [compras, setCompras] = useState([])
   const [productoEditandoId, setProductoEditandoId] = useState(null)
   const [colaboradorEditandoId, setColaboradorEditandoId] = useState(null)
   const [itemCatalogoEditandoClave, setItemCatalogoEditandoClave] = useState(null)
@@ -163,6 +202,9 @@ function App() {
   const [entrega, setEntrega] = useState(() => crearEntregaVacia())
   const [lineaEntrega, setLineaEntrega] = useState(lineaEntregaVacia)
   const [lineasEntrega, setLineasEntrega] = useState([])
+  const [compra, setCompra] = useState(() => crearCompraVacia())
+  const [lineaCompra, setLineaCompra] = useState(lineaCompraVacia)
+  const [lineasCompra, setLineasCompra] = useState([])
   const [colaborador, setColaborador] = useState(colaboradorVacio)
   const [mensaje, setMensaje] = useState(null)
   const [sesion, setSesion] = useState(null)
@@ -180,6 +222,7 @@ function App() {
   const [busquedaMovimientos, setBusquedaMovimientos] = useState("")
   const [busquedaColaboradores, setBusquedaColaboradores] = useState("")
   const [busquedaEntregas, setBusquedaEntregas] = useState("")
+  const [busquedaCompras, setBusquedaCompras] = useState("")
   const [busquedaReportes, setBusquedaReportes] = useState("")
   const [busquedaPerfiles, setBusquedaPerfiles] = useState("")
   const [filtroProductos, setFiltroProductos] = useState("Activos")
@@ -209,6 +252,7 @@ function App() {
   const [anulacionPendiente, setAnulacionPendiente] = useState(null)
   const [motivoAnulacion, setMotivoAnulacion] = useState("")
   const [comprobanteExpandidoId, setComprobanteExpandidoId] = useState("")
+  const [compraExpandidaId, setCompraExpandidaId] = useState("")
   const [categoriaPedido, setCategoriaPedido] = useState("EPP")
   const [mostrarCambioContrasena, setMostrarCambioContrasena] = useState(false)
   const [formularioContrasena, setFormularioContrasena] = useState({
@@ -320,6 +364,7 @@ function App() {
         setProductos(datos.productos)
         setMovimientos(datos.movimientos)
         setEntregas(datos.entregas)
+        setCompras(datos.compras || [])
         setColaboradores(datos.colaboradores)
 
         const responsables = await cargarResponsablesEntrega(perfil)
@@ -401,7 +446,10 @@ function App() {
   )
   const productoEditandoTieneHistorial = Boolean(productoEditandoId) && (
     movimientos.some((item) => item.productoId === productoEditandoId) ||
-    entregas.some((item) => item.productoId === productoEditandoId)
+    entregas.some((item) => item.productoId === productoEditandoId) ||
+    compras.some((compraItem) =>
+      compraItem.lineas?.some((linea) => linea.productoId === productoEditandoId)
+    )
   )
   const colaboradorEditando = colaboradores.find(
     (item) => item.id === colaboradorEditandoId
@@ -417,10 +465,19 @@ function App() {
   const productoLineaEntrega = productos.find(
     (producto) => String(producto.id) === lineaEntrega.productoId
   )
+  const productoLineaCompra = productos.find(
+    (producto) => String(producto.id) === lineaCompra.productoId
+  )
   const lineasEntregaDetalle = lineasEntrega.map((linea) => ({
     ...linea,
     producto: productosPorId.get(String(linea.productoId)),
     cantidad: Number(linea.cantidad),
+  }))
+  const lineasCompraDetalle = lineasCompra.map((linea) => ({
+    ...linea,
+    producto: productosPorId.get(String(linea.productoId)),
+    cantidad: Number(linea.cantidad),
+    valorUnitario: Number(linea.valorUnitario || 0),
   }))
   const entregaTieneDotacion =
     productoLineaEntrega?.categoria === "Dotación" ||
@@ -436,6 +493,14 @@ function App() {
     (total, linea) => total + Number(linea.cantidad || 0),
     0
   )
+  const totalLineasCompra = lineasCompraDetalle.reduce(
+    (total, linea) => total + Number(linea.cantidad || 0),
+    0
+  )
+  const totalValorCompra = lineasCompraDetalle.reduce(
+    (total, linea) => total + Number(linea.cantidad || 0) * Number(linea.valorUnitario || 0),
+    0
+  )
   const productosOrdenadosParaEntrega = [...productos].sort((a, b) => {
     const aSugerido = productoSugeridoParaColaborador(a, colaboradorEntrega)
     const bSugerido = productoSugeridoParaColaborador(b, colaboradorEntrega)
@@ -447,6 +512,14 @@ function App() {
   const productosFiltrados = productos.filter((producto) =>
     coincideFiltroProducto(producto, filtroProductos) &&
     coincideBusqueda(producto, busquedaProductos, ["nombre", "categoria", "tipo", "variante", "unidad", "ubicacion", "estado"])
+  )
+  const comprasFiltradas = compras.filter((item) =>
+    coincideBusqueda({
+      ...item,
+      lineasTexto: (item.lineas || [])
+        .map((linea) => `${linea.producto} ${linea.categoria} ${linea.tipo} ${linea.variante}`)
+        .join(" "),
+    }, busquedaCompras, ["numeroFactura", "fecha", "proveedor", "responsable", "observacion", "estado", "lineasTexto"])
   )
   const movimientosFiltrados = movimientos.filter((item) =>
     coincideFiltroMovimiento(item, filtroMovimientos) &&
@@ -745,6 +818,12 @@ function App() {
     value: producto.id,
     label: `${producto.nombre} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
   }))
+  const opcionesProductosCompra = productos
+    .filter((producto) => producto.estado === "Activo")
+    .map((producto) => ({
+      value: producto.id,
+      label: `${producto.nombre} - ${producto.tipo} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
+    }))
   const opcionesProductosEntrega = productosOrdenadosParaEntrega
     .filter((producto) => producto.estado === "Activo")
     .map((producto) => ({
@@ -983,6 +1062,7 @@ function App() {
     setProductos([])
     setMovimientos([])
     setEntregas([])
+    setCompras([])
     setColaboradores([])
     setPerfiles([])
     setResponsablesEntrega([])
@@ -1375,6 +1455,385 @@ function App() {
     )
   }
 
+  function actualizarCompra(campo, valor) {
+    setCompra({
+      ...compra,
+      [campo]: valor,
+    })
+  }
+
+  function actualizarLineaCompra(campo, valor) {
+    setLineaCompra({
+      ...lineaCompra,
+      [campo]: valor,
+    })
+  }
+
+  function agregarLineaCompra() {
+    if (!productoLineaCompra) {
+      mostrarMensaje("Selecciona un producto existente para agregar a la compra.", "error")
+      return
+    }
+
+    if (productoLineaCompra.estado !== "Activo") {
+      mostrarMensaje("Solo se pueden registrar compras sobre productos activos.", "error")
+      return
+    }
+
+    let cantidad
+    let valorUnitario
+
+    try {
+      cantidad = numeroSeguro(lineaCompra.cantidad, { minimo: 1 })
+      valorUnitario = lineaCompra.valorUnitario
+        ? numeroSeguro(lineaCompra.valorUnitario, { minimo: 0, maximo: 1000000000 })
+        : 0
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar la línea de compra")
+      return
+    }
+
+    const lineaExistente = lineasCompra.find(
+      (linea) => linea.productoId === lineaCompra.productoId
+    )
+
+    if (lineaExistente) {
+      setLineasCompra(
+        lineasCompra.map((linea) => {
+          if (linea.productoId !== lineaCompra.productoId) return linea
+
+          return {
+            ...linea,
+            cantidad: Number(linea.cantidad || 0) + cantidad,
+            valorUnitario,
+            observacion: textoSeguro(lineaCompra.observacion, 220),
+          }
+        })
+      )
+    } else {
+      setLineasCompra([
+        ...lineasCompra,
+        {
+          productoId: lineaCompra.productoId,
+          cantidad,
+          valorUnitario,
+          observacion: textoSeguro(lineaCompra.observacion, 220),
+        },
+      ])
+    }
+
+    setLineaCompra(lineaCompraVacia)
+  }
+
+  function quitarLineaCompra(productoId) {
+    setLineasCompra(
+      lineasCompra.filter((linea) => linea.productoId !== productoId)
+    )
+  }
+
+  function limpiarCompra() {
+    setCompra(crearCompraVacia())
+    setLineaCompra(lineaCompraVacia)
+    setLineasCompra([])
+  }
+
+  function compraSegura() {
+    validarCamposRequeridos([
+      { valor: compra.numeroFactura, mensaje: "Escribe el número de factura." },
+      { valor: compra.fecha, mensaje: "Selecciona la fecha de la factura." },
+      { valor: compra.proveedor, mensaje: "Escribe el proveedor." },
+      { valor: compra.responsable, mensaje: "Selecciona el responsable." },
+    ])
+
+    if (!fechaIsoValida(compra.fecha)) {
+      throw new ErrorValidacion("La fecha de la compra no es válida.")
+    }
+
+    if (lineasCompraDetalle.length === 0) {
+      throw new ErrorValidacion("Agrega al menos un producto a la compra.")
+    }
+
+    const lineaInvalida = lineasCompraDetalle.find(
+      (linea) => !linea.producto || Number(linea.cantidad) <= 0
+    )
+
+    if (lineaInvalida) {
+      throw new ErrorValidacion("Todas las líneas deben tener producto existente y cantidad mayor a cero.")
+    }
+
+    return {
+      numeroFactura: textoSeguro(compra.numeroFactura, 80),
+      fecha: compra.fecha,
+      proveedor: textoSeguro(compra.proveedor, 160),
+      responsable: textoSeguro(compra.responsable, 160),
+      observacion: textoLargoSeguro(compra.observacion),
+    }
+  }
+
+  async function registrarCompra(evento) {
+    evento.preventDefault()
+
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite registrar compras.")) return
+    if (accionGuardando || !accionPermitida("compra", 2500)) return
+
+    let compraPayload
+
+    try {
+      compraPayload = compraSegura()
+    } catch (error) {
+      mostrarErrorSupabase(error, "validar la compra")
+      return
+    }
+
+    setAccionGuardando("compra")
+
+    try {
+      const resultado = await registrarCompraRpc({
+        compra: compraPayload,
+        lineasCompraDetalle,
+      })
+
+      if (!resultado.compra) {
+        throw new Error("No se recibió la compra registrada.")
+      }
+
+      const productosActualizados = new Map(
+        resultado.productos.map((producto) => [String(producto.id), producto])
+      )
+
+      setProductos(
+        productos.map((producto) =>
+          productosActualizados.get(String(producto.id)) || producto
+        )
+      )
+      setMovimientos([...resultado.movimientos, ...movimientos])
+      setCompras([resultado.compra, ...compras])
+      limpiarCompra()
+      mostrarMensaje(`Compra registrada correctamente. Factura: ${resultado.compra.numeroFactura}`, "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "registrar la compra")
+    } finally {
+      setAccionGuardando("")
+    }
+  }
+
+  function claveProductoCompra(item) {
+    return [
+      item.categoria,
+      item.producto || item.nombre,
+      item.tipo,
+      item.variante,
+      item.unidad,
+    ].map(normalizarTexto).join("__")
+  }
+
+  async function importarCompras(evento) {
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite importar compras.")) {
+      evento.target.value = ""
+      return
+    }
+
+    const archivo = evento.target.files?.[0]
+
+    if (!archivo) return
+
+    const nombreArchivo = archivo.name.toLowerCase()
+
+    if (!nombreArchivo.endsWith(".csv") && !nombreArchivo.endsWith(".xlsx")) {
+      mostrarMensaje("Selecciona un archivo CSV o XLSX de compras.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    if (archivo.size > 5 * 1024 * 1024) {
+      mostrarMensaje("El archivo de compras supera el máximo permitido de 5 MB.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    setAccionGuardando("importar-compras")
+
+    try {
+      const filas = await leerFilasCompra(archivo)
+
+      if (filas.length === 0) {
+        throw new ErrorValidacion("El archivo no tiene líneas de compra válidas.")
+      }
+
+      const productosIndice = new Map(
+        productos.map((producto) => [claveProductoCompra(producto), producto])
+      )
+      const facturasExistentes = new Set(compras.map((item) => normalizarTexto(item.numeroFactura)))
+      const errores = []
+      const grupos = new Map()
+
+      filas.forEach((fila) => {
+        const cantidad = Number(fila.cantidad)
+        const valorUnitario = fila.valorUnitario ? Number(fila.valorUnitario) : 0
+        const producto = productosIndice.get(claveProductoCompra(fila))
+
+        if (!fila.factura) errores.push(`Fila ${fila.fila}: falta factura.`)
+        if (!fechaIsoValida(fila.fecha)) errores.push(`Fila ${fila.fila}: fecha inválida.`)
+        if (!fila.proveedor) errores.push(`Fila ${fila.fila}: falta proveedor.`)
+        if (!fila.responsable) errores.push(`Fila ${fila.fila}: falta responsable.`)
+        if (!producto) errores.push(`Fila ${fila.fila}: el producto no coincide con un producto existente.`)
+        if (producto && producto.estado !== "Activo") errores.push(`Fila ${fila.fila}: el producto está inactivo.`)
+        if (!Number.isFinite(cantidad) || cantidad <= 0) errores.push(`Fila ${fila.fila}: cantidad inválida.`)
+        if (!Number.isFinite(valorUnitario) || valorUnitario < 0) errores.push(`Fila ${fila.fila}: valor unitario inválido.`)
+        if (facturasExistentes.has(normalizarTexto(fila.factura))) errores.push(`Fila ${fila.fila}: la factura ya existe.`)
+
+        const claveFactura = normalizarTexto(fila.factura)
+
+        if (!grupos.has(claveFactura)) {
+          grupos.set(claveFactura, {
+            compra: {
+              numeroFactura: textoSeguro(fila.factura, 80),
+              fecha: fila.fecha,
+              proveedor: textoSeguro(fila.proveedor, 160),
+              responsable: textoSeguro(fila.responsable, 160),
+              observacion: textoLargoSeguro(fila.observacion),
+            },
+            lineas: [],
+          })
+        }
+
+        const grupo = grupos.get(claveFactura)
+
+        if (
+          grupo.compra.fecha !== fila.fecha ||
+          normalizarTexto(grupo.compra.proveedor) !== normalizarTexto(fila.proveedor) ||
+          normalizarTexto(grupo.compra.responsable) !== normalizarTexto(fila.responsable)
+        ) {
+          errores.push(`Fila ${fila.fila}: los datos de la factura no coinciden con otras líneas de la misma factura.`)
+        }
+
+        if (producto) {
+          grupo.lineas.push({
+            producto,
+            cantidad,
+            valorUnitario,
+            observacion: textoSeguro(fila.observacion, 220),
+          })
+        }
+      })
+
+      if (errores.length > 0) {
+        throw new ErrorValidacion(`Importación detenida. ${errores.slice(0, 6).join(" ")}`)
+      }
+
+      const comprasCreadas = []
+      const movimientosCreados = []
+      const productosActualizados = new Map()
+
+      for (const grupo of grupos.values()) {
+        const resultado = await registrarCompraRpc({
+          compra: grupo.compra,
+          lineasCompraDetalle: grupo.lineas,
+        })
+
+        if (resultado.compra) comprasCreadas.push(resultado.compra)
+        movimientosCreados.push(...resultado.movimientos)
+        resultado.productos.forEach((producto) => {
+          productosActualizados.set(String(producto.id), producto)
+        })
+      }
+
+      setProductos(
+        productos.map((producto) =>
+          productosActualizados.get(String(producto.id)) || producto
+        )
+      )
+      setMovimientos([...movimientosCreados, ...movimientos])
+      setCompras([...comprasCreadas, ...compras])
+      mostrarMensaje(`Importación lista. Compras registradas: ${comprasCreadas.length}.`, "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "importar compras")
+    } finally {
+      setAccionGuardando("")
+      evento.target.value = ""
+    }
+  }
+
+  async function adjuntarFacturaCompra(compraItem, archivo) {
+    if (!archivo || accionGuardando) return
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite adjuntar facturas.")) return
+
+    const tipoPermitido = archivo.type === "application/pdf" || archivo.type.startsWith("image/")
+
+    if (!tipoPermitido) {
+      mostrarMensaje("Adjunta una factura en PDF o imagen.", "error")
+      return
+    }
+
+    if (archivo.size > 8 * 1024 * 1024) {
+      mostrarMensaje("La factura supera el máximo permitido de 8 MB.", "error")
+      return
+    }
+
+    setAccionGuardando(`factura-${compraItem.id}`)
+
+    try {
+      const extension = archivo.name.split(".").pop()?.toLowerCase() || "pdf"
+      const nombreSeguro = `${Date.now()}-${normalizarTexto(compraItem.numeroFactura) || "factura"}.${extension}`
+      const ruta = `${compraItem.id}/${nombreSeguro}`
+      const { error: errorStorage } = await supabase.storage
+        .from("facturas-compras")
+        .upload(ruta, archivo, {
+          cacheControl: "3600",
+          contentType: archivo.type,
+          upsert: true,
+        })
+
+      if (errorStorage) throw errorStorage
+
+      const compraActualizada = await adjuntarFacturaCompraRpc({
+        compraId: compraItem.id,
+        facturaRuta: ruta,
+        facturaUrl: "",
+      })
+
+      setCompras(
+        compras.map((item) => item.id === compraActualizada.id ? compraActualizada : item)
+      )
+      mostrarMensaje("Factura adjuntada correctamente.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "adjuntar la factura")
+    } finally {
+      setAccionGuardando("")
+    }
+  }
+
+  async function abrirFacturaCompra(compraItem) {
+    if (!compraItem.facturaRuta && !compraItem.facturaUrl) {
+      mostrarMensaje("Esta compra todavía no tiene factura adjunta.", "error")
+      return
+    }
+
+    if (compraItem.facturaRuta) {
+      const { data, error } = await supabase.storage
+        .from("facturas-compras")
+        .createSignedUrl(compraItem.facturaRuta, 3600)
+
+      if (error || !data?.signedUrl) {
+        mostrarErrorSupabase(error, "abrir la factura")
+        return
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
+      return
+    }
+
+    window.open(compraItem.facturaUrl, "_blank", "noopener,noreferrer")
+  }
+
+  function abrirCompra(compraItem) {
+    const abierta = abrirComprobanteCompra(compraItem)
+
+    if (!abierta) {
+      mostrarMensaje("El navegador bloqueó la ventana de la compra. Permite ventanas emergentes para esta app.")
+    }
+  }
+
   function actualizarColaborador(campo, valor) {
     if (campo === "nombreCentroCostos") {
       const centroSeleccionado = centrosCostos.find(
@@ -1397,7 +1856,10 @@ function App() {
 
   function prepararEdicion(producto) {
     const tieneHistorial = movimientos.some((item) => item.productoId === producto.id) ||
-      entregas.some((item) => item.productoId === producto.id)
+      entregas.some((item) => item.productoId === producto.id) ||
+      compras.some((compraItem) =>
+        compraItem.lineas?.some((linea) => linea.productoId === producto.id)
+      )
 
     setProductoEditandoId(producto.id)
     const productoCatalogo = catalogoProductos.find(
@@ -2162,6 +2624,40 @@ function App() {
       { titulo: "Ubicación", campo: "ubicacion" },
       { titulo: "Estado", campo: "estado" },
     ], productos)
+  }
+
+  function exportarFormatoCompra() {
+    descargarXlsx("formato-compra-msl.xlsx", [{
+      nombre: "Compra",
+      columnas: [
+        { titulo: "factura", campo: "factura" },
+        { titulo: "fecha", campo: "fecha" },
+        { titulo: "proveedor", campo: "proveedor" },
+        { titulo: "responsable", campo: "responsable" },
+        { titulo: "categoria", campo: "categoria" },
+        { titulo: "producto", campo: "producto" },
+        { titulo: "tipo", campo: "tipo" },
+        { titulo: "variante", campo: "variante" },
+        { titulo: "unidad", campo: "unidad" },
+        { titulo: "cantidad", campo: "cantidad" },
+        { titulo: "valor unitario", campo: "valorUnitario" },
+        { titulo: "observacion", campo: "observacion" },
+      ],
+      filas: [{
+        factura: "FAC-001",
+        fecha: fechaLocalISO(),
+        proveedor: "Proveedor",
+        responsable: perfil?.nombre || "",
+        categoria: "Dotación",
+        producto: "Bota de seguridad",
+        tipo: "Calzado",
+        variante: "38",
+        unidad: "Par",
+        cantidad: 1,
+        valorUnitario: 0,
+        observacion: "",
+      }],
+    }])
   }
 
   function exportarMovimientos() {
@@ -2994,6 +3490,303 @@ function App() {
               Tu rol es de consulta para productos. Puedes revisar y exportar información, pero no registrar, editar ni eliminar.
             </p>
           )}
+
+          <section style={{ ...panelBloque, marginTop: "34px" }}>
+            <div style={accionesModulo}>
+              <h2 style={{ margin: 0, marginRight: "auto" }}>Compras por factura</h2>
+              {puedeGestionarProductos && (
+                <>
+                  <button type="button" onClick={exportarFormatoCompra} style={botonSecundario}>
+                    <Download size={18} />
+                    Formato compra
+                  </button>
+                  <label style={accionGuardando === "importar-compras" ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
+                    <Upload size={18} />
+                    {accionGuardando === "importar-compras" ? "Importando..." : "Importar compra"}
+                    <input
+                      type="file"
+                      accept=".csv,.xlsx"
+                      onChange={importarCompras}
+                      disabled={accionGuardando === "importar-compras"}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {puedeGestionarProductos && (
+              <form onSubmit={registrarCompra} style={gridFormulario}>
+                <Campo texto="Número de factura">
+                  <input
+                    value={compra.numeroFactura}
+                    onChange={(e) => actualizarCompra("numeroFactura", e.target.value)}
+                    required
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Fecha factura">
+                  <input
+                    type="date"
+                    value={compra.fecha}
+                    onChange={(e) => actualizarCompra("fecha", e.target.value)}
+                    required
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Proveedor">
+                  <input
+                    value={compra.proveedor}
+                    onChange={(e) => actualizarCompra("proveedor", e.target.value)}
+                    required
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Responsable">
+                  <ListaBuscable
+                    value={compra.responsable}
+                    onChange={(valor) => actualizarCompra("responsable", valor)}
+                    options={opcionesResponsablesEntrega}
+                    placeholder="Selecciona responsable"
+                    required
+                    soloLista
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Observación">
+                  <input
+                    value={compra.observacion}
+                    onChange={(e) => actualizarCompra("observacion", e.target.value)}
+                    placeholder="Ej: compra mensual, proveedor, centro"
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Producto comprado">
+                  <ListaBuscable
+                    value={lineaCompra.productoId}
+                    onChange={(valor) => actualizarLineaCompra("productoId", valor)}
+                    options={opcionesProductosCompra}
+                    placeholder="Selecciona producto existente"
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Cantidad">
+                  <input
+                    type="number"
+                    min="1"
+                    value={lineaCompra.cantidad}
+                    onChange={(e) => actualizarLineaCompra("cantidad", e.target.value)}
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Valor unitario">
+                  <input
+                    type="number"
+                    min="0"
+                    value={lineaCompra.valorUnitario}
+                    onChange={(e) => actualizarLineaCompra("valorUnitario", e.target.value)}
+                    placeholder="Opcional"
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <Campo texto="Nota línea">
+                  <input
+                    value={lineaCompra.observacion}
+                    onChange={(e) => actualizarLineaCompra("observacion", e.target.value)}
+                    placeholder="Opcional"
+                    style={campoFormulario}
+                  />
+                </Campo>
+
+                <div style={{ display: "flex", alignItems: "end" }}>
+                  <button type="button" onClick={agregarLineaCompra} style={botonSecundario}>
+                    <Plus size={18} />
+                    Agregar a compra
+                  </button>
+                </div>
+
+                {lineasCompraDetalle.length > 0 && (
+                  <div style={resumenLineasEntrega}>
+                    <strong>Productos en esta compra: {lineasCompraDetalle.length}</strong>
+                    <table style={tabla}>
+                      <thead>
+                        <tr style={encabezadoTabla}>
+                          <th style={celdaTabla}>Producto</th>
+                          <th style={celdaTabla}>Tipo</th>
+                          <th style={celdaTabla}>Variante</th>
+                          <th style={celdaTabla}>Cantidad</th>
+                          <th style={celdaTabla}>Stock final</th>
+                          <th style={celdaTabla}>Valor unitario</th>
+                          <th style={celdaTabla}>Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineasCompraDetalle.map((linea) => (
+                          <tr key={linea.productoId}>
+                            <td style={celdaTabla}>{linea.producto?.nombre || "Producto no encontrado"}</td>
+                            <td style={celdaTabla}>{linea.producto?.tipo || "-"}</td>
+                            <td style={celdaTabla}>{linea.producto?.variante || "-"}</td>
+                            <td style={celdaTabla}>{linea.cantidad} {linea.producto?.unidad || ""}</td>
+                            <td style={celdaTabla}>
+                              {Number(linea.producto?.stockActual || 0) + Number(linea.cantidad || 0)}
+                            </td>
+                            <td style={celdaTabla}>{formatearDinero(linea.valorUnitario)}</td>
+                            <td style={celdaTabla}>
+                              <button type="button" onClick={() => quitarLineaCompra(linea.productoId)} style={botonEliminar}>
+                                Quitar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p style={{ margin: "10px 0 0" }}>
+                      Total ítems: {totalLineasCompra} | Valor estimado: {formatearDinero(totalValorCompra)}
+                    </p>
+                  </div>
+                )}
+
+                <div style={filaBotones}>
+                  <button disabled={estaGuardando("compra")} style={botonPrincipal}>
+                    <FileText size={18} />
+                    {estaGuardando("compra") ? "Guardando..." : "Registrar compra"}
+                  </button>
+                  <button type="button" onClick={limpiarCompra} style={botonSecundario}>
+                    Limpiar compra
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <h3 style={{ marginTop: "26px" }}>Historial de compras</h3>
+            <input
+              value={busquedaCompras}
+              onChange={(e) => setBusquedaCompras(e.target.value)}
+              placeholder="Buscar por factura, proveedor, responsable o producto"
+              style={campoBusqueda}
+            />
+
+            <table style={tabla}>
+              <thead>
+                <tr style={encabezadoTabla}>
+                  <th style={celdaTabla}>Factura</th>
+                  <th style={celdaTabla}>Fecha</th>
+                  <th style={celdaTabla}>Proveedor</th>
+                  <th style={celdaTabla}>Responsable</th>
+                  <th style={celdaTabla}>Líneas</th>
+                  <th style={celdaTabla}>Ítems</th>
+                  <th style={celdaTabla}>Factura adjunta</th>
+                  <th style={celdaTabla}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comprasFiltradas.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" style={celdaTabla}>Todavía no hay compras registradas.</td>
+                  </tr>
+                ) : (
+                  comprasFiltradas.map((compraItem) => {
+                    const expandida = compraExpandidaId === compraItem.id
+                    const totalItemsCompra = (compraItem.lineas || []).reduce(
+                      (total, linea) => total + Number(linea.cantidad || 0),
+                      0
+                    )
+
+                    return (
+                      <tr key={compraItem.id}>
+                        <td style={celdaTabla}>{compraItem.numeroFactura}</td>
+                        <td style={celdaTabla}>{compraItem.fecha}</td>
+                        <td style={celdaTabla}>{compraItem.proveedor}</td>
+                        <td style={celdaTabla}>{compraItem.responsable}</td>
+                        <td style={celdaTabla}>
+                          <button
+                            type="button"
+                            onClick={() => setCompraExpandidaId(expandida ? "" : compraItem.id)}
+                            style={botonEditar}
+                          >
+                            {expandida ? "Ocultar" : "Ver"} {compraItem.lineas?.length || 0}
+                          </button>
+                        </td>
+                        <td style={celdaTabla}>{totalItemsCompra}</td>
+                        <td style={celdaTabla}>
+                          {compraItem.facturaRuta || compraItem.facturaUrl ? (
+                            <button type="button" onClick={() => abrirFacturaCompra(compraItem)} style={botonEditar}>
+                              <Paperclip size={16} />
+                              Ver
+                            </button>
+                          ) : (
+                            "Pendiente"
+                          )}
+                        </td>
+                        <td style={celdaTabla}>
+                          <button type="button" onClick={() => abrirCompra(compraItem)} style={botonEditar}>
+                            <Printer size={16} />
+                            Imprimir
+                          </button>
+                          {puedeGestionarProductos && (
+                            <label style={estaGuardando(`factura-${compraItem.id}`) ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
+                              <Paperclip size={16} />
+                              {estaGuardando(`factura-${compraItem.id}`) ? "Adjuntando..." : "Adjuntar"}
+                              <input
+                                type="file"
+                                accept="application/pdf,image/*"
+                                disabled={estaGuardando(`factura-${compraItem.id}`)}
+                                onChange={(e) => {
+                                  adjuntarFacturaCompra(compraItem, e.target.files?.[0])
+                                  e.target.value = ""
+                                }}
+                                style={{ display: "none" }}
+                              />
+                            </label>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+
+            {compraExpandidaId && (
+              <section style={resumenLineasEntrega}>
+                <strong>Detalle de compra</strong>
+                <table style={tabla}>
+                  <thead>
+                    <tr style={encabezadoTabla}>
+                      <th style={celdaTabla}>Producto</th>
+                      <th style={celdaTabla}>Categoría</th>
+                      <th style={celdaTabla}>Tipo</th>
+                      <th style={celdaTabla}>Variante</th>
+                      <th style={celdaTabla}>Cantidad</th>
+                      <th style={celdaTabla}>Valor unitario</th>
+                      <th style={celdaTabla}>Stock final</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(comprasFiltradas.find((item) => item.id === compraExpandidaId)?.lineas || []).map((linea) => (
+                      <tr key={linea.id}>
+                        <td style={celdaTabla}>{linea.producto}</td>
+                        <td style={celdaTabla}>{linea.categoria}</td>
+                        <td style={celdaTabla}>{linea.tipo}</td>
+                        <td style={celdaTabla}>{linea.variante}</td>
+                        <td style={celdaTabla}>{linea.cantidad} {linea.unidad}</td>
+                        <td style={celdaTabla}>{formatearDinero(linea.valorUnitario)}</td>
+                        <td style={celdaTabla}>{linea.stockResultante}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+          </section>
 
           <h2 style={{ marginTop: "34px" }}>Productos registrados</h2>
 

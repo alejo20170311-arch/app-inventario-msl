@@ -5,6 +5,7 @@ import {
   colaboradorParaSupabase,
   movimientoDesdeSupabase,
   movimientoParaSupabase,
+  compraDesdeSupabase,
   productoDesdeSupabase,
   productoParaSupabase,
 } from "./inventarioSupabase"
@@ -132,4 +133,59 @@ export async function anularComprobanteRpc({
     movimientos: Array.isArray(data?.movimientos) ? data.movimientos : [],
     productos: Array.isArray(data?.productos) ? data.productos : [],
   }
+}
+
+export async function registrarCompraRpc({
+  compra,
+  lineasCompraDetalle,
+}) {
+  const { data, error } = await rpcAutenticado("registrar_compra_rpc", {
+    p_compra: {
+      numero_factura: textoSeguro(compra.numeroFactura, 80),
+      fecha: compra.fecha,
+      proveedor: textoSeguro(compra.proveedor, 160),
+      responsable: textoSeguro(compra.responsable, 160),
+      observacion: textoLargoSeguro(compra.observacion || ""),
+    },
+    p_lineas: lineasCompraDetalle.map((linea) => {
+      if (!uuidValido(linea.producto.id)) throw new Error("Producto inválido.")
+
+      return {
+        producto_id: linea.producto.id,
+        cantidad: numeroSeguro(linea.cantidad, { minimo: 1 }),
+        valor_unitario: numeroSeguro(linea.valorUnitario || 0, { minimo: 0, maximo: 1000000000 }),
+        observacion: textoSeguro(linea.observacion || "", 220),
+      }
+    }),
+  })
+
+  if (error) throw error
+
+  return {
+    compra: data?.compra ? compraDesdeSupabase(data.compra) : null,
+    movimientos: Array.isArray(data?.movimientos)
+      ? data.movimientos.map(movimientoDesdeSupabase)
+      : [],
+    productos: Array.isArray(data?.productos)
+      ? data.productos.map(productoDesdeSupabase)
+      : [],
+  }
+}
+
+export async function adjuntarFacturaCompraRpc({
+  compraId,
+  facturaUrl,
+  facturaRuta,
+}) {
+  if (!uuidValido(compraId)) throw new Error("Compra inválida.")
+
+  const { data, error } = await rpcAutenticado("adjuntar_factura_compra_rpc", {
+    p_compra_id: compraId,
+    p_factura_url: textoSeguro(facturaUrl || "", 500),
+    p_factura_ruta: textoSeguro(facturaRuta || "", 500),
+  })
+
+  if (error) throw error
+
+  return compraDesdeSupabase(data)
 }
