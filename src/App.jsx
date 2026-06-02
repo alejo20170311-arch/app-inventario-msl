@@ -15,6 +15,7 @@ import {
   Plus,
   Printer,
   ShieldAlert,
+  Trash2,
   Upload,
   UserRound,
   Users,
@@ -42,6 +43,7 @@ import {
 import {
   anularComprobanteRpc,
   eliminarColaboradorRpc,
+  eliminarCompraRpc,
   eliminarProductoAdminRpc,
   guardarCatalogoProductoRpc,
   guardarColaboradorRpc,
@@ -65,7 +67,7 @@ import {
   planearDotacionColaboradores,
 } from "./utils/dotacion"
 import { fechaLocalISO, mesLocalISO } from "./utils/fechas"
-import { leerFilasCompra } from "./utils/importacionCompras"
+import { leerFilasCompra, leerFilasProducto } from "./utils/importacionCompras"
 import {
   coincideBusqueda,
   coincideFiltroColaborador,
@@ -1638,6 +1640,16 @@ function App() {
     }
   }
 
+  function claveProductoInventario(item) {
+    return [
+      item.categoria,
+      item.nombre || item.producto,
+      item.tipo,
+      item.variante,
+      item.unidad,
+    ].map(normalizarTexto).join("__")
+  }
+
   function claveProductoCompra(item) {
     return [
       item.categoria,
@@ -1646,6 +1658,196 @@ function App() {
       item.variante,
       item.unidad,
     ].map(normalizarTexto).join("__")
+  }
+
+  async function importarProductos(evento) {
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite importar productos.")) {
+      evento.target.value = ""
+      return
+    }
+
+    if (accionGuardando || !accionPermitida("importar-productos", 3000)) {
+      evento.target.value = ""
+      return
+    }
+
+    const archivo = evento.target.files?.[0]
+
+    if (!archivo) return
+
+    const nombreArchivo = archivo.name.toLowerCase()
+
+    if (!nombreArchivo.endsWith(".csv") && !nombreArchivo.endsWith(".xlsx")) {
+      mostrarMensaje("Selecciona un archivo CSV o XLSX de productos.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    if (archivo.size > 5 * 1024 * 1024) {
+      mostrarMensaje("El archivo de productos supera el máximo permitido de 5 MB.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    setAccionGuardando("importar-productos")
+
+    try {
+      const filas = await leerFilasProducto(archivo)
+
+      if (filas.length === 0) {
+        throw new ErrorValidacion("El archivo no tiene productos válidos.")
+      }
+
+      const errores = []
+      const productosImportados = filas.map((fila) => {
+        const categoriaEntrada = textoSeguro(fila.categoria || "Dotación", 80)
+        const categoriaNormalizada = normalizarTexto(categoriaEntrada)
+        const categoria = categoriaNormalizada === "epp" ? "EPP" : "Dotación"
+        const nombre = textoSeguro(fila.nombre, 160)
+        const tipo = textoSeguro(fila.tipo, 160)
+        const variante = textoSeguro(fila.variante || "Única", 120)
+        const unidad = textoSeguro(fila.unidad || "Unidad", 40)
+        const ubicacion = textoSeguro(fila.ubicacion || "Bodega GH", 160)
+        const estadoEntrada = textoSeguro(fila.estado || "Activo", 20)
+        const estado = normalizarTexto(estadoEntrada) === "inactivo" ? "Inactivo" : "Activo"
+        const stockActual = fila.stockActual === "" ? 0 : Number(fila.stockActual)
+        const stockMinimo = fila.stockMinimo === "" ? 0 : Number(fila.stockMinimo)
+        const motivoEntrada = textoSeguro(fila.motivoEntrada || "Importación Excel", 80)
+        const observacion = textoLargoSeguro(fila.observacion || `Importación de productos: ${archivo.name}`)
+
+        if (!["dotacion", "epp"].includes(categoriaNormalizada)) errores.push(`Fila ${fila.fila}: categoría debe ser Dotación o EPP.`)
+        if (!nombre) errores.push(`Fila ${fila.fila}: falta producto.`)
+        if (!tipo) errores.push(`Fila ${fila.fila}: falta tipo.`)
+        if (!Number.isFinite(stockActual) || stockActual < 0) errores.push(`Fila ${fila.fila}: stock inválido.`)
+        if (!Number.isFinite(stockMinimo) || stockMinimo < 0) errores.push(`Fila ${fila.fila}: stock mínimo inválido.`)
+        if (!["activo", "inactivo"].includes(normalizarTexto(estadoEntrada))) errores.push(`Fila ${fila.fila}: estado debe ser Activo o Inactivo.`)
+        if (stockActual > 0 && !esAdministrador) errores.push(`Fila ${fila.fila}: solo un administrador puede importar entradas de stock.`)
+
+        return {
+          categoria,
+          nombre,
+          tipo,
+          variante,
+          unidad,
+          ubicacion,
+          estado,
+          stockActual,
+          stockMinimo,
+          motivoEntrada,
+          observacion,
+        }
+      })
+
+      const productosUnicos = Array.from(
+        new Map(productosImportados.map((item) => [claveProductoInventario(item), item])).values()
+      )
+
+      if (errores.length > 0) {
+        throw new ErrorValidacion(`Importación detenida. ${errores.slice(0, 8).join(" ")}`)
+      }
+
+      const productosPorClave = new Map(productos.map((item) => [claveProductoInventario(item), item]))
+      const catalogoPorClave = new Map(catalogoProductos.map((item) => [claveItemCatalogo(item), item]))
+      const productosGuardados = new Map(productos.map((item) => [String(item.id), item]))
+      const movimientosCreados = []
+      let creados = 0
+      let actualizados = 0
+
+      for (const item of productosUnicos) {
+        const claveCatalogo = claveItemCatalogo(item)
+        const itemCatalogoActual = catalogoPorClave.get(claveCatalogo)
+        const tiposCatalogo = opcionesSeparadas(itemCatalogoActual?.tipo)
+        const tipoCatalogo = tiposCatalogo.includes(item.tipo)
+          ? itemCatalogoActual.tipo
+          : [...tiposCatalogo, item.tipo].filter(Boolean).join(", ")
+        const variantesCatalogo = Array.from(new Set([
+          ...(itemCatalogoActual?.variantes || []),
+          item.variante,
+        ].filter(Boolean)))
+        const catalogoPayload = {
+          categoria: item.categoria,
+          nombre: item.nombre,
+          tipo: tipoCatalogo || item.tipo,
+          unidad: item.unidad,
+          variantes: variantesCatalogo,
+          stockMinimo: esAdministrador
+            ? item.stockMinimo
+            : Number(itemCatalogoActual?.stockMinimo ?? 0),
+        }
+
+        const catalogoGuardado = await guardarCatalogoProductoRpc({
+          catalogoId: itemCatalogoActual?.id || null,
+          catalogoPayload,
+        })
+
+        catalogoPorClave.set(claveCatalogo, catalogoGuardado)
+
+        const existente = productosPorClave.get(claveProductoInventario(item))
+        const movimientoEntrada = item.stockActual > 0
+          ? {
+              id: crypto.randomUUID(),
+              productoId: existente?.id || "",
+              producto: item.nombre,
+              variante: item.variante,
+              unidad: item.unidad,
+              tipoMovimiento: "Entrada",
+              cantidad: item.stockActual,
+              fecha: fechaLocalISO(),
+              observacion: item.observacion || item.motivoEntrada,
+              stockResultante: existente
+                ? Number(existente.stockActual || 0) + item.stockActual
+                : item.stockActual,
+            }
+          : null
+
+        const productoPayload = {
+          nombre: item.nombre,
+          categoria: item.categoria,
+          tipo: item.tipo,
+          variante: item.variante,
+          unidad: item.unidad,
+          stockMinimo: esAdministrador
+            ? item.stockMinimo
+            : Number(existente?.stockMinimo ?? catalogoGuardado.stockMinimo ?? 0),
+          ubicacion: item.ubicacion,
+          estado: item.estado,
+        }
+
+        if (!existente) {
+          productoPayload.stockActual = item.stockActual
+        }
+
+        const { producto: productoGuardado, movimiento: movimientoCreado } = await guardarProductoMovimientoRpc({
+          productoId: existente?.id || null,
+          productoPayload,
+          movimiento: movimientoEntrada,
+        })
+
+        productosGuardados.set(String(productoGuardado.id), productoGuardado)
+        productosPorClave.set(claveProductoInventario(productoGuardado), productoGuardado)
+        if (movimientoCreado) movimientosCreados.push(movimientoCreado)
+        if (existente) actualizados += 1
+        else creados += 1
+      }
+
+      setCatalogoProductos(
+        Array.from(catalogoPorClave.values()).sort((a, b) =>
+          `${a.categoria} ${a.nombre}`.localeCompare(`${b.categoria} ${b.nombre}`)
+        )
+      )
+      setProductos(
+        Array.from(productosGuardados.values()).sort((a, b) =>
+          `${a.nombre} ${a.tipo} ${a.variante}`.localeCompare(`${b.nombre} ${b.tipo} ${b.variante}`)
+        )
+      )
+      setMovimientos([...movimientosCreados, ...movimientos])
+      mostrarMensaje(`Importación lista. Productos nuevos: ${creados}. Actualizados: ${actualizados}.`, "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "importar productos")
+    } finally {
+      setAccionGuardando("")
+      evento.target.value = ""
+    }
   }
 
   async function importarCompras(evento) {
@@ -1779,7 +1981,8 @@ function App() {
     if (!archivo || accionGuardando) return
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite adjuntar facturas.")) return
 
-    const tipoPermitido = archivo.type === "application/pdf" || archivo.type.startsWith("image/")
+    const tipoFactura = obtenerTipoFactura(archivo)
+    const tipoPermitido = tipoFactura === "application/pdf" || tipoFactura.startsWith("image/")
 
     if (!tipoPermitido) {
       mostrarMensaje("Adjunta una factura en PDF o imagen.", "error")
@@ -1801,7 +2004,7 @@ function App() {
         .from("facturas-compras")
         .upload(ruta, archivo, {
           cacheControl: "3600",
-          contentType: archivo.type,
+          contentType: tipoFactura,
           upsert: true,
         })
 
@@ -1852,6 +2055,53 @@ function App() {
 
     if (!abierta) {
       mostrarMensaje("El navegador bloqueó la ventana de la compra. Permite ventanas emergentes para esta app.")
+    }
+  }
+
+  async function eliminarCompra(compraItem) {
+    if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite eliminar compras.")) return
+    if (accionGuardando || !accionPermitida(`eliminar-compra-${compraItem.id}`, 2500)) return
+
+    const totalItemsCompra = (compraItem.lineas || []).reduce(
+      (total, linea) => total + Number(linea.cantidad || 0),
+      0
+    )
+    const confirmar = window.confirm(
+      `¿Seguro que quieres eliminar la compra ${compraItem.numeroFactura}? Se descontarán ${totalItemsCompra} ítems del inventario.`
+    )
+
+    if (!confirmar) return
+
+    setAccionGuardando(`eliminar-compra-${compraItem.id}`)
+
+    try {
+      const resultado = await eliminarCompraRpc(compraItem.id)
+
+      if (resultado.facturaRuta) {
+        await supabase.storage
+          .from("facturas-compras")
+          .remove([resultado.facturaRuta])
+      }
+
+      const productosActualizados = new Map(
+        resultado.productos.map((producto) => [String(producto.id), producto])
+      )
+
+      setProductos(
+        productos.map((producto) =>
+          productosActualizados.get(String(producto.id)) || producto
+        )
+      )
+      setMovimientos([...resultado.movimientos, ...movimientos])
+      setCompras(compras.filter((item) => item.id !== resultado.compraId))
+      if (compraExpandidaId === resultado.compraId) {
+        setCompraExpandidaId("")
+      }
+      mostrarMensaje("Compra eliminada y stock ajustado correctamente.", "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "eliminar la compra")
+    } finally {
+      setAccionGuardando("")
     }
   }
 
@@ -2634,7 +2884,9 @@ function App() {
 
 
   function exportarProductos() {
-    descargarCsv("productos-msl.csv", [
+    descargarXlsx("productos-msl.xlsx", [{
+      nombre: "Productos",
+      columnas: [
       { titulo: "Producto", campo: "nombre" },
       { titulo: "Categoría", campo: "categoria" },
       { titulo: "Tipo", campo: "tipo" },
@@ -2644,7 +2896,9 @@ function App() {
       { titulo: "Stock Mínimo", campo: "stockMinimo" },
       { titulo: "Ubicación", campo: "ubicacion" },
       { titulo: "Estado", campo: "estado" },
-    ], productos)
+      ],
+      filas: productos,
+    }])
   }
 
   function exportarFormatoCompra() {
@@ -3281,6 +3535,19 @@ function App() {
                 {mostrarFormularioItem ? "Cerrar item nuevo" : "Crear item nuevo"}
               </button>
             )}
+            {puedeGestionarProductos && (
+              <label style={accionGuardando === "importar-productos" ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
+                <Upload size={18} />
+                {accionGuardando === "importar-productos" ? "Importando..." : "Importar productos"}
+                <input
+                  type="file"
+                  accept=".csv,.xlsx"
+                  onChange={importarProductos}
+                  disabled={accionGuardando === "importar-productos"}
+                  style={{ display: "none" }}
+                />
+              </label>
+            )}
             <button onClick={exportarProductos} style={botonSecundario}>
               <Download size={18} />
               Exportar productos
@@ -3786,20 +4053,31 @@ function App() {
                             Imprimir
                           </button>
                           {puedeGestionarProductos && (
-                            <label style={estaGuardando(`factura-${compraItem.id}`) ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
-                              <Paperclip size={16} />
-                              {estaGuardando(`factura-${compraItem.id}`) ? "Adjuntando..." : "Adjuntar"}
-                              <input
-                                type="file"
-                                accept="application/pdf,image/*"
-                                disabled={estaGuardando(`factura-${compraItem.id}`)}
-                                onChange={(e) => {
-                                  adjuntarFacturaCompra(compraItem, e.target.files?.[0])
-                                  e.target.value = ""
-                                }}
-                                style={{ display: "none" }}
-                              />
-                            </label>
+                            <>
+                              <label style={estaGuardando(`factura-${compraItem.id}`) ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
+                                <Paperclip size={16} />
+                                {estaGuardando(`factura-${compraItem.id}`) ? "Adjuntando..." : "Adjuntar"}
+                                <input
+                                  type="file"
+                                  accept="application/pdf,.pdf,image/*"
+                                  disabled={estaGuardando(`factura-${compraItem.id}`)}
+                                  onChange={(e) => {
+                                    adjuntarFacturaCompra(compraItem, e.target.files?.[0])
+                                    e.target.value = ""
+                                  }}
+                                  style={{ display: "none" }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                disabled={estaGuardando(`eliminar-compra-${compraItem.id}`)}
+                                onClick={() => eliminarCompra(compraItem)}
+                                style={botonEliminar}
+                              >
+                                <Trash2 size={16} />
+                                {estaGuardando(`eliminar-compra-${compraItem.id}`) ? "Eliminando..." : "Eliminar"}
+                              </button>
+                            </>
                           )}
                         </td>
                       </tr>

@@ -192,3 +192,24 @@ export async function adjuntarFacturaCompraRpc({
 
   return compraDesdeSupabase(data)
 }
+
+export async function eliminarCompraRpc(compraId) {
+  if (!uuidValido(compraId)) throw new Error("Compra invÃ¡lida.")
+
+  const { data, error } = await rpcAutenticado("eliminar_compra_rpc", {
+    p_compra_id: compraId,
+  })
+
+  if (error) throw error
+
+  return {
+    compraId: data?.compraId || compraId,
+    facturaRuta: data?.facturaRuta || "",
+    movimientos: Array.isArray(data?.movimientos)
+      ? data.movimientos.map(movimientoDesdeSupabase)
+      : [],
+    productos: Array.isArray(data?.productos)
+      ? data.productos.map(productoDesdeSupabase)
+      : [],
+  }
+}

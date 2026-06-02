@@ -142,3 +142,39 @@ export async function leerFilasCompra(archivo) {
     Object.entries(fila).some(([clave, valor]) => clave !== "fila" && String(valor || "").trim())
   )
 }
+
+export async function leerFilasProducto(archivo) {
+  const filas = await leerFilasArchivo(archivo)
+
+  if (filas.length < 2) {
+    return []
+  }
+
+  const encabezados = filas[0].map(normalizarEncabezado)
+
+  function valor(fila, opciones) {
+    const indice = opciones
+      .map(normalizarEncabezado)
+      .map((opcion) => encabezados.indexOf(opcion))
+      .find((posicion) => posicion >= 0)
+
+    return indice >= 0 ? String(fila[indice] || "").trim() : ""
+  }
+
+  return filas.slice(1).map((fila, indice) => ({
+    fila: indice + 2,
+    categoria: valor(fila, ["categoria", "categorÃ­a"]),
+    nombre: valor(fila, ["producto", "nombre", "item", "nombre producto"]),
+    tipo: valor(fila, ["tipo"]),
+    variante: valor(fila, ["variante", "talla", "talla variante"]),
+    unidad: valor(fila, ["unidad"]),
+    stockActual: valor(fila, ["stock actual", "stock inicial", "entrada", "cantidad"]),
+    stockMinimo: valor(fila, ["stock minimo", "stock mÃ­nimo", "minimo", "mÃ­nimo"]),
+    ubicacion: valor(fila, ["ubicacion", "ubicaciÃ³n", "bodega"]),
+    estado: valor(fila, ["estado"]),
+    motivoEntrada: valor(fila, ["motivo entrada", "motivo de entrada", "motivo"]),
+    observacion: valor(fila, ["observacion", "observaciÃ³n", "nota"]),
+  })).filter((fila) =>
+    Object.entries(fila).some(([clave, valor]) => clave !== "fila" && String(valor || "").trim())
+  )
+}
