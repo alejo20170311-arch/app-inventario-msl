@@ -104,6 +104,14 @@ export function mensajeSeguroError(error) {
     return "ya existe un archivo con ese nombre. Intenta adjuntar la factura de nuevo."
   }
 
+  if (mensaje.includes("failed to execute") || mensaje.includes("network request failed")) {
+    return "el navegador no pudo procesar el archivo. Descarga nuevamente el PDF e intenta adjuntarlo otra vez."
+  }
+
+  if (error instanceof TypeError) {
+    return error.message || "el navegador no pudo procesar el archivo seleccionado."
+  }
+
   if (mensaje.includes("no se pudo asociar la factura")) {
     return error.message
   }

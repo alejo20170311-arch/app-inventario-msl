@@ -258,8 +258,6 @@ function nombreArchivoFactura(compraItem, archivo) {
 }
 
 function prepararFacturaParaSubir(archivo, tipoFactura) {
-  if (archivo.type === tipoFactura) return archivo
-
   return new Blob([archivo], { type: tipoFactura })
 }
 
@@ -2091,9 +2089,18 @@ function App() {
       mostrarMensaje("Factura adjuntada correctamente.", "exito")
     } catch (error) {
       if (rutaSubida) {
-        await supabase.storage
+        const { error: errorLimpieza } = await supabase.storage
           .from(BUCKET_FACTURAS_COMPRAS)
           .remove([rutaSubida])
+
+        if (errorLimpieza) {
+          console.warn("No se pudo limpiar la factura cargada parcialmente.", {
+            ruta: rutaSubida,
+            codigo: errorLimpieza?.code,
+            mensaje: errorLimpieza?.message,
+            estado: errorLimpieza?.statusCode || errorLimpieza?.status,
+          })
+        }
       }
       mostrarErrorSupabase(error, "adjuntar la factura")
     } finally {
