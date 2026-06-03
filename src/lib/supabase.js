@@ -4,6 +4,8 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const posibleServiceRole = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 
+export const supabaseStorageObjectUrl = `${supabaseUrl}/storage/v1/object`
+
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY en .env.local")
 }

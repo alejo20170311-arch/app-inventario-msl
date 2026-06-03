@@ -59,7 +59,7 @@ import {
   guardarPerfilUsuarioSeguro,
 } from "./lib/perfilesSupabase"
 import { cargarResponsablesEntrega } from "./lib/responsablesSupabase"
-import { supabase } from "./lib/supabase"
+import { supabase, supabaseStorageObjectUrl } from "./lib/supabase"
 import { abrirComprobanteCompra } from "./utils/comprobanteCompra"
 import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
 import {
@@ -259,6 +259,53 @@ function nombreArchivoFactura(compraItem, archivo) {
 
 async function prepararFacturaParaSubir(archivo) {
   return await archivo.arrayBuffer()
+}
+
+function rutaObjetoStorage(bucket, ruta) {
+  const rutaCodificada = String(ruta || "")
+    .split("/")
+    .map((parte) => encodeURIComponent(parte))
+    .join("/")
+
+  return `${supabaseStorageObjectUrl}/${bucket}/${rutaCodificada}`
+}
+
+async function subirFacturaCompraStorage(ruta, archivo, tipoFactura) {
+  const { data, error } = await supabase.auth.getSession()
+
+  if (error || !data.session?.access_token) {
+    throw new Error("La sesión venció o no está activa. Cierra sesión e ingresa de nuevo.")
+  }
+
+  const cuerpo = await prepararFacturaParaSubir(archivo)
+  const respuesta = await fetch(rutaObjetoStorage(BUCKET_FACTURAS_COMPRAS, ruta), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${data.session.access_token}`,
+      "cache-control": "max-age=3600",
+      "content-type": tipoFactura,
+      "x-upsert": "false",
+    },
+    body: cuerpo,
+  })
+
+  if (respuesta.ok) return
+
+  const textoError = await respuesta.text()
+  let errorDetalle = textoError
+
+  try {
+    const json = JSON.parse(textoError)
+    errorDetalle = json.message || json.error || textoError
+  } catch {
+    // Si Storage responde texto plano, se muestra tal cual.
+  }
+
+  const errorStorage = new Error(errorDetalle || "No se pudo subir la factura a Supabase Storage.")
+  errorStorage.status = respuesta.status
+  errorStorage.statusCode = respuesta.status
+  errorStorage.code = respuesta.status
+  throw errorStorage
 }
 
 function facturaCompraVisible(compraItem) {
@@ -2066,20 +2113,11 @@ function App() {
     try {
       const nombreSeguro = nombreArchivoFactura(compraItem, archivo)
       const ruta = `${compraItem.id}/${nombreSeguro}`
-      const facturaParaSubir = await prepararFacturaParaSubir(archivo)
 
       rutaSubida = ruta
       etapaAdjunto = "subir el archivo a Supabase"
 
-      const { error: errorStorage } = await supabase.storage
-        .from(BUCKET_FACTURAS_COMPRAS)
-        .upload(ruta, facturaParaSubir, {
-          cacheControl: "3600",
-          contentType: tipoFactura,
-          upsert: false,
-        })
-
-      if (errorStorage) throw errorStorage
+      await subirFacturaCompraStorage(ruta, archivo, tipoFactura)
 
       etapaAdjunto = "asociar la factura con la compra"
       const compraActualizada = await adjuntarFacturaCompraRpc({
