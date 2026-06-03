@@ -187,7 +187,18 @@ function formatearDinero(valor) {
   })
 }
 
-function obtenerTipoFactura(archivo) {
+async function detectarPdfPorContenido(archivo) {
+  if (!archivo?.slice) return false
+
+  try {
+    const encabezado = await archivo.slice(0, 5).text()
+    return encabezado === "%PDF-"
+  } catch {
+    return false
+  }
+}
+
+async function obtenerTipoFactura(archivo) {
   const nombre = String(archivo?.name || "").toLowerCase()
   const tipo = String(archivo?.type || "").toLowerCase()
 
@@ -202,6 +213,12 @@ function obtenerTipoFactura(archivo) {
   if (nombre.endsWith(".jpg") || nombre.endsWith(".jpeg")) return "image/jpeg"
   if (nombre.endsWith(".png")) return "image/png"
   if (nombre.endsWith(".webp")) return "image/webp"
+  if (tipo === "application/octet-stream" && await detectarPdfPorContenido(archivo)) {
+    return "application/pdf"
+  }
+  if (!tipo && await detectarPdfPorContenido(archivo)) {
+    return "application/pdf"
+  }
 
   return ""
 }
@@ -238,6 +255,12 @@ function nombreArchivoFactura(compraItem, archivo) {
   const factura = normalizarTexto(compraItem.numeroFactura) || "factura"
 
   return `${Date.now()}-${factura}.${extension}`
+}
+
+function prepararFacturaParaSubir(archivo, tipoFactura) {
+  if (archivo.type === tipoFactura) return archivo
+
+  return new Blob([archivo], { type: tipoFactura })
 }
 
 function facturaCompraVisible(compraItem) {
@@ -2022,7 +2045,7 @@ function App() {
     if (!archivo || accionGuardando) return
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite adjuntar facturas.")) return
 
-    const tipoFactura = obtenerTipoFactura(archivo)
+    const tipoFactura = await obtenerTipoFactura(archivo)
     const tipoPermitido = tipoFactura === "application/pdf" || tipoFactura.startsWith("image/")
 
     if (!tipoPermitido) {
@@ -2037,12 +2060,18 @@ function App() {
 
     setAccionGuardando(`factura-${compraItem.id}`)
 
+    let rutaSubida = ""
+
     try {
       const nombreSeguro = nombreArchivoFactura(compraItem, archivo)
       const ruta = `${compraItem.id}/${nombreSeguro}`
+      const facturaParaSubir = prepararFacturaParaSubir(archivo, tipoFactura)
+
+      rutaSubida = ruta
+
       const { error: errorStorage } = await supabase.storage
         .from(BUCKET_FACTURAS_COMPRAS)
-        .upload(ruta, archivo, {
+        .upload(ruta, facturaParaSubir, {
           cacheControl: "3600",
           contentType: tipoFactura,
           upsert: false,
@@ -2061,6 +2090,11 @@ function App() {
       )
       mostrarMensaje("Factura adjuntada correctamente.", "exito")
     } catch (error) {
+      if (rutaSubida) {
+        await supabase.storage
+          .from(BUCKET_FACTURAS_COMPRAS)
+          .remove([rutaSubida])
+      }
       mostrarErrorSupabase(error, "adjuntar la factura")
     } finally {
       setAccionGuardando("")

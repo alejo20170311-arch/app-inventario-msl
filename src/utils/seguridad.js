@@ -88,12 +88,20 @@ export function mensajeSeguroError(error) {
     return "falta configurar el bucket de facturas en Supabase."
   }
 
-  if (mensaje.includes("mime type") || mensaje.includes("invalid file type") || mensaje.includes("not allowed")) {
+  if (mensaje.includes("mime type") || mensaje.includes("invalid file type") || mensaje.includes("content type") || mensaje.includes("not allowed")) {
     return "el tipo de archivo no está permitido para facturas."
   }
 
-  if (mensaje.includes("file size") || mensaje.includes("payload too large") || codigo === "413") {
+  if (mensaje.includes("file size") || mensaje.includes("payload too large") || mensaje.includes("exceeded the maximum allowed size") || codigo === "413") {
     return "el archivo supera el tamaño permitido."
+  }
+
+  if (mensaje.includes("failed to fetch") || mensaje.includes("networkerror") || mensaje.includes("network error") || mensaje.includes("load failed")) {
+    return "no se pudo conectar con Supabase. Revisa la conexión e intenta de nuevo."
+  }
+
+  if (mensaje.includes("resource already exists") || mensaje.includes("already exists")) {
+    return "ya existe un archivo con ese nombre. Intenta adjuntar la factura de nuevo."
   }
 
   if (mensaje.includes("no se pudo asociar la factura")) {
