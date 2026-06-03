@@ -257,8 +257,8 @@ function nombreArchivoFactura(compraItem, archivo) {
   return `${Date.now()}-${factura}.${extension}`
 }
 
-function prepararFacturaParaSubir(archivo, tipoFactura) {
-  return new Blob([archivo], { type: tipoFactura })
+async function prepararFacturaParaSubir(archivo) {
+  return await archivo.arrayBuffer()
 }
 
 function facturaCompraVisible(compraItem) {
@@ -2066,7 +2066,7 @@ function App() {
     try {
       const nombreSeguro = nombreArchivoFactura(compraItem, archivo)
       const ruta = `${compraItem.id}/${nombreSeguro}`
-      const facturaParaSubir = prepararFacturaParaSubir(archivo, tipoFactura)
+      const facturaParaSubir = await prepararFacturaParaSubir(archivo)
 
       rutaSubida = ruta
       etapaAdjunto = "subir el archivo a Supabase"
