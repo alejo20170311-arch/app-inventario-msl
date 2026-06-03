@@ -986,9 +986,11 @@ function App() {
   function mostrarErrorSupabase(error, accion = "guardar la información") {
     console.warn("Operación rechazada por seguridad o validación.", {
       accion,
+      etapa: error?.etapaAdjunto,
       codigo: error?.code,
       nombre: error?.name,
       mensaje: error?.message,
+      detalle: error?.details || error?.hint || error?.error_description,
       estado: error?.statusCode || error?.status,
     })
     mostrarMensaje(`No se pudo ${accion}: ${mensajeSeguroError(error)}`, "error")
@@ -2059,6 +2061,7 @@ function App() {
     setAccionGuardando(`factura-${compraItem.id}`)
 
     let rutaSubida = ""
+    let etapaAdjunto = "preparar el archivo"
 
     try {
       const nombreSeguro = nombreArchivoFactura(compraItem, archivo)
@@ -2066,6 +2069,7 @@ function App() {
       const facturaParaSubir = prepararFacturaParaSubir(archivo, tipoFactura)
 
       rutaSubida = ruta
+      etapaAdjunto = "subir el archivo a Supabase"
 
       const { error: errorStorage } = await supabase.storage
         .from(BUCKET_FACTURAS_COMPRAS)
@@ -2077,17 +2081,23 @@ function App() {
 
       if (errorStorage) throw errorStorage
 
+      etapaAdjunto = "asociar la factura con la compra"
       const compraActualizada = await adjuntarFacturaCompraRpc({
         compraId: compraItem.id,
         facturaRuta: ruta,
         facturaUrl: "",
       })
 
+      etapaAdjunto = "actualizar el historial en pantalla"
       setCompras(
         compras.map((item) => item.id === compraActualizada.id ? compraActualizada : item)
       )
       mostrarMensaje("Factura adjuntada correctamente.", "exito")
     } catch (error) {
+      if (error && typeof error === "object") {
+        error.etapaAdjunto = etapaAdjunto
+      }
+
       if (rutaSubida) {
         const { error: errorLimpieza } = await supabase.storage
           .from(BUCKET_FACTURAS_COMPRAS)

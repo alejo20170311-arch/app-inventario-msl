@@ -72,6 +72,7 @@ export function validarArchivoCsv(archivo) {
 export function mensajeSeguroError(error) {
   const mensaje = String(error?.message || error || "").toLowerCase()
   const codigo = String(error?.code || error?.statusCode || error?.status || "").toLowerCase()
+  const etapa = textoSeguro(error?.etapaAdjunto || "", 80)
 
   if (
     mensaje.includes("row-level security") ||
@@ -130,6 +131,29 @@ export function mensajeSeguroError(error) {
 
   if (error instanceof ErrorValidacion) {
     return error.message
+  }
+
+  const detalles = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.error_description,
+    error?.name,
+    error?.code,
+    error?.statusCode,
+    error?.status,
+  ]
+    .map((item) => textoSeguro(item || "", 180))
+    .filter(Boolean)
+    .filter((item) => item !== "[object Object]")
+
+  if (detalles.length > 0) {
+    const prefijo = etapa ? `${etapa}: ` : ""
+    return `${prefijo}${detalles.slice(0, 3).join(" | ")}`
+  }
+
+  if (etapa) {
+    return `${etapa}: el navegador no entregó un detalle del error. Intenta de nuevo y revisa la consola si persiste.`
   }
 
   return "ocurrió un error inesperado. Revisa los datos e intenta de nuevo."
