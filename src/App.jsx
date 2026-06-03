@@ -261,6 +261,14 @@ async function prepararFacturaParaSubir(archivo) {
   return await archivo.arrayBuffer()
 }
 
+function avatarPerfilVisible(url) {
+  const valor = String(url || "").trim()
+
+  if (valor.startsWith("data:")) return ""
+
+  return valor
+}
+
 function rutaObjetoStorage(bucket, ruta) {
   const rutaCodificada = String(ruta || "")
     .split("/")
@@ -1319,10 +1327,14 @@ function App() {
     try {
       const avatar = await imagenPerfilReducida(archivo)
       const avatarStorageUrl = await subirAvatarStorage(sesion?.user?.id, avatar.blob)
-      const avatarUrl = avatarStorageUrl || avatar.dataUrl
+
+      if (!avatarStorageUrl) {
+        throw new Error("No se pudo guardar la foto en Storage. Revisa el bucket de avatars en Supabase.")
+      }
+
       const metadata = {
         ...(sesion?.user?.user_metadata || {}),
-        avatar_url: avatarUrl,
+        avatar_url: avatarStorageUrl,
       }
       const { data, error } = await supabase.auth.updateUser({ data: metadata })
 
@@ -3447,7 +3459,7 @@ function App() {
       pestanaActiva={pestanaActiva}
       setPestanaActiva={setPestanaActiva}
       perfil={perfil}
-      avatarUrl={sesion?.user?.user_metadata?.avatar_url}
+      avatarUrl={avatarPerfilVisible(sesion?.user?.user_metadata?.avatar_url)}
       cerrarSesion={cerrarSesion}
       abrirCambioContrasena={() => setMostrarCambioContrasena(true)}
       cambiarFotoPerfil={cambiarFotoPerfil}
