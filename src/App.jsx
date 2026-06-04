@@ -3560,6 +3560,7 @@ function App() {
                     value={perfilFormulario.rol}
                     onChange={(valor) => actualizarPerfilFormulario("rol", valor || "Consulta")}
                     options={rolesDisponibles}
+                    soloLista
                     style={campoFormulario}
                   />
                 </Campo>
