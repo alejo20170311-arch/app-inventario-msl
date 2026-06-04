@@ -2303,7 +2303,7 @@ function App() {
       variante: producto.variante,
       unidad: producto.unidad,
       stockActual: producto.stockActual,
-      stockMinimo: obtenerStockMinimo(productoCatalogo) || producto.stockMinimo,
+      stockMinimo: producto.stockMinimo ?? obtenerStockMinimo(productoCatalogo),
       motivoEntrada: "Compra",
       observacionEntrada: "",
       ubicacion: producto.ubicacion,
