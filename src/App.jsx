@@ -613,6 +613,12 @@ function App() {
     producto: productosPorId.get(String(linea.productoId)),
     cantidad: Number(linea.cantidad),
   }))
+  const categoriasLineasEntrega = [...new Set(
+    lineasEntregaDetalle
+      .map((linea) => linea.producto?.categoria)
+      .filter(Boolean)
+  )]
+  const categoriaEntregaActual = categoriasLineasEntrega[0] || ""
   const lineasCompraDetalle = lineasCompra.map((linea) => ({
     ...linea,
     producto: productosPorId.get(String(linea.productoId)),
@@ -965,10 +971,13 @@ function App() {
       label: `${producto.nombre} - ${producto.tipo} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
     }))
   const opcionesProductosEntrega = productosOrdenadosParaEntrega
-    .filter((producto) => producto.estado === "Activo")
+    .filter((producto) =>
+      producto.estado === "Activo" &&
+      (!categoriaEntregaActual || producto.categoria === categoriaEntregaActual)
+    )
     .map((producto) => ({
       value: producto.id,
-      label: `${productoSugeridoParaColaborador(producto, colaboradorEntrega) ? "Sugerido - " : ""}${producto.nombre} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
+      label: `${productoSugeridoParaColaborador(producto, colaboradorEntrega) ? "Sugerido - " : ""}${producto.categoria} - ${producto.nombre} - ${producto.variante} - Stock: ${producto.stockActual} ${producto.unidad}`,
     }))
   const opcionesCentrosReporte = [
     { value: "Todos", label: "Todos" },
@@ -1548,6 +1557,11 @@ function App() {
 
     if (productoLineaEntrega.estado === "Inactivo") {
       mostrarMensaje("No se puede entregar un producto inactivo.")
+      return
+    }
+
+    if (categoriaEntregaActual && productoLineaEntrega.categoria !== categoriaEntregaActual) {
+      mostrarMensaje(`Esta entrega ya tiene productos de ${categoriaEntregaActual}. Registra ${productoLineaEntrega.categoria} en una entrega separada.`, "error")
       return
     }
 
@@ -2819,6 +2833,11 @@ function App() {
 
     if (lineasEntregaDetalle.length === 0) {
       mostrarMensaje("Agrega al menos un producto a la entrega.", "error")
+      return
+    }
+
+    if (categoriasLineasEntrega.length > 1) {
+      mostrarMensaje("No mezcles EPP y dotación en el mismo comprobante. Registra cada categoría en una entrega separada.", "error")
       return
     }
 
@@ -4781,6 +4800,7 @@ function App() {
                   <thead>
                     <tr style={encabezadoTabla}>
                       <th style={celdaTabla}>Producto</th>
+                      <th style={celdaTabla}>Categoría</th>
                       <th style={celdaTabla}>Variante</th>
                       <th style={celdaTabla}>Cantidad</th>
                       <th style={celdaTabla}>Stock disponible</th>
@@ -4791,6 +4811,7 @@ function App() {
                     {lineasEntregaDetalle.map((linea) => (
                       <tr key={linea.productoId}>
                         <td style={celdaTabla}>{linea.producto?.nombre || "Producto no encontrado"}</td>
+                        <td style={celdaTabla}>{linea.producto?.categoria || "-"}</td>
                         <td style={celdaTabla}>{linea.producto?.variante || "-"}</td>
                         <td style={celdaTabla}>{linea.cantidad} {linea.producto?.unidad || ""}</td>
                         <td style={celdaTabla}>{linea.producto?.stockActual ?? "-"} {linea.producto?.unidad || ""}</td>

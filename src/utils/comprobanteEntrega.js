@@ -20,6 +20,23 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
     : algunaAnulada
       ? "Parcialmente anulada"
       : "Activa"
+  const categoriasComprobante = new Set(
+    entregasComprobante.map((item) => item.categoria).filter(Boolean)
+  )
+  const esComprobanteEpp = categoriasComprobante.size === 1 && categoriasComprobante.has("EPP")
+  const tituloCategoria = esComprobanteEpp ? "EPP" : "DOTACION"
+  const codigoFormato = esComprobanteEpp ? "F-SST-33" : "F-GH-11"
+  const textoLegal = esComprobanteEpp
+    ? `
+            <p>Declaro que recibo los elementos de proteccion personal relacionados en este documento en buen estado y para uso durante mis actividades laborales.</p>
+            <p>Me comprometo a utilizarlos correctamente, conservarlos en condiciones adecuadas y reportar oportunamente cualquier deterioro, perdida o necesidad de reposicion.</p>
+            <p>Los EPP entregados no generan obligacion de devolucion ni autorizacion de descuento por no devolucion. Su reposicion se gestionara de acuerdo con las necesidades de seguridad y salud en el trabajo.</p>
+          `
+    : `
+            <p>La dotación que aquí se entrega es y será de la empresa en todo momento. En caso de terminación del contrato de trabajo o entrega de nueva dotación, me comprometo a hacer la devolución de forma inmediata.</p>
+            <p>En caso de daño de la dotación o parte de ella, el trabajador debe devolverla a la empresa.</p>
+            <p>Autorizo expresamente a la empresa mediante este documento a descontar de salarios y liquidación de prestaciones los valores de la dotación cuando en cualquiera de los casos anteriores no la devuelva al empleador.</p>
+          `
   const filasProductos = entregasComprobante.map((item) => `
     <tr class="${item.estado === "Anulada" ? "anulada" : ""}">
       <td>${valorSeguro(item.producto)}</td>
@@ -266,10 +283,10 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             </div>
             <div class="titulo-formato">
               <div>ACTA DE ENTREGA</div>
-              <div>DOTACIÓN Y EPP</div>
+              <div>${tituloCategoria}</div>
             </div>
             <div class="datos-formato">
-              <div class="fila-formato">Código: F-GH-11</div>
+              <div class="fila-formato">Código: ${codigoFormato}</div>
               <div class="fila-formato">Versión: 08</div>
               <div class="fila-formato">Fecha: 01 abr 2026</div>
             </div>
@@ -322,9 +339,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           </section>
 
           <section class="texto-legal">
-            <p>La dotación que aquí se entrega es y será de la empresa en todo momento. En caso de terminación del contrato de trabajo o entrega de nueva dotación, me comprometo a hacer la devolución de forma inmediata.</p>
-            <p>En caso de daño de la dotación o parte de ella, el trabajador debe devolverla a la empresa.</p>
-            <p>Autorizo expresamente a la empresa mediante este documento a descontar de salarios y liquidación de prestaciones los valores de la dotación cuando en cualquiera de los casos anteriores no la devuelva al empleador.</p>
+            ${textoLegal}
           </section>
 
           <section class="firmas">

@@ -93,6 +93,7 @@ export function crearAlertaDotacionEntrega({
   entregaTieneDotacion,
 }) {
   if (!colaborador) return null
+  if (!entregaTieneDotacion) return null
 
   const ciclo = cicloDotacionParaFecha(fechaEntrega)
   const ultima = ultimaDotacionColaborador(entregas, colaborador.id)
