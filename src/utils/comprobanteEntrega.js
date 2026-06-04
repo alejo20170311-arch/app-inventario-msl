@@ -270,8 +270,8 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             </div>
             <div class="datos-formato">
               <div class="fila-formato">Código: F-GH-11</div>
-              <div class="fila-formato">Versión: 07</div>
-              <div class="fila-formato">Fecha: 05 ene 2026</div>
+              <div class="fila-formato">Versión: 08</div>
+              <div class="fila-formato">Fecha: 01 abr 2026</div>
             </div>
           </header>
 
