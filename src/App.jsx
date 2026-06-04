@@ -3570,6 +3570,7 @@ function App() {
                     value={perfilFormulario.estado}
                     onChange={(valor) => actualizarPerfilFormulario("estado", valor || "Activo")}
                     options={estadosPerfil}
+                    soloLista
                     style={campoFormulario}
                   />
                 </Campo>
