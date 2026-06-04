@@ -74,6 +74,8 @@ import {
   coincideFiltroEntrega,
   coincideFiltroMovimiento,
   coincideFiltroProducto,
+  esProductoStockBajo,
+  esProductoStockCritico,
   limpiarObservacion,
   normalizarTexto,
   obtenerStockMinimo,
@@ -574,7 +576,7 @@ function App() {
   const variantesProducto = productoSeleccionado?.variantes ?? []
   const productosActivos = productos.filter((producto) => producto.estado === "Activo")
   const productosStockBajo = productosActivos.filter(
-    (producto) => Number(producto.stockActual) <= Number(producto.stockMinimo)
+    (producto) => esProductoStockBajo(producto)
   )
   const productoMovimiento = productos.find(
     (producto) => String(producto.id) === movimiento.productoId
@@ -914,7 +916,7 @@ function App() {
     .filter((producto) =>
       producto.categoria === categoriaPedido &&
       producto.estado === "Activo" &&
-      Number(producto.stockActual) <= Number(producto.stockMinimo)
+      esProductoStockBajo(producto)
     )
     .map((producto) => ({
       ...producto,
@@ -990,7 +992,7 @@ function App() {
   })
   const perfilesPorId = new Map(perfiles.map((item) => [item.id, item]))
   const productosStockCritico = productosStockBajo.filter(
-    (producto) => Number(producto.stockActual) <= Math.max(1, Number(producto.stockMinimo) / 2)
+    (producto) => esProductoStockCritico(producto)
   )
   const colaboradoresActivos = colaboradores.filter((item) => item.estado === "Activo")
   const entregasAnuladasMes = entregas.filter(

@@ -64,8 +64,18 @@ export function coincideBusqueda(item, busqueda, campos) {
     normalizarBusqueda(item[campo]).includes(textoBusqueda)
   )
 }
+export function esProductoStockBajo(producto) {
+  const stockMinimo = Number(producto.stockMinimo)
+
+  return stockMinimo > 0 && Number(producto.stockActual) <= stockMinimo
+}
+export function esProductoStockCritico(producto) {
+  const stockMinimo = Number(producto.stockMinimo)
+
+  return esProductoStockBajo(producto) && Number(producto.stockActual) <= Math.max(1, stockMinimo / 2)
+}
 export function coincideFiltroProducto(producto, filtro) {
-  if (filtro === "Stock bajo") return Number(producto.stockActual) <= Number(producto.stockMinimo)
+  if (filtro === "Stock bajo") return esProductoStockBajo(producto)
   if (filtro === "Activos") return producto.estado === "Activo"
   if (filtro === "Inactivos") return producto.estado === "Inactivo"
   return true
