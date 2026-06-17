@@ -154,7 +154,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             margin-top: 22px;
           }
           .titulo-bloque {
-            background: #000000;
+            background: #0100fe;
             color: #FFFFFF;
             padding: 10px 12px;
             font-weight: bold;
