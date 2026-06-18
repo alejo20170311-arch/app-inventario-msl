@@ -3089,6 +3089,14 @@ function App() {
       anterior.estado !== "Anulada"
   }
 
+  function esCreacionComprobante(item) {
+    return item.tabla === "comprobantes" && item.accion === "INSERT"
+  }
+
+  function esOperacionComprobanteAgrupable(item) {
+    return esCreacionComprobante(item) || esAnulacionComprobante(item)
+  }
+
   function esAuditoriaRelacionadaConComprobante(item, comprobanteId) {
     if (!comprobanteId) return false
 
@@ -3097,8 +3105,8 @@ function App() {
 
   function agruparAuditoria(lista) {
     const consumidos = new Set()
-    const gruposAnulacion = lista
-      .filter(esAnulacionComprobante)
+    const gruposComprobante = lista
+      .filter(esOperacionComprobanteAgrupable)
       .map((item) => {
         const comprobanteId = idComprobanteAuditoria(item)
         const usuarioId = item.usuario_id || ""
@@ -3128,14 +3136,15 @@ function App() {
         registros.forEach((registro) => consumidos.add(registro.id))
 
         return {
-          tipo: "anulacion-comprobante",
-          id: `anulacion-${comprobanteId}-${segundo}-${usuarioId}`,
+          tipo: "operacion-comprobante",
+          operacion: esAnulacionComprobante(item) ? "anulacion" : "creacion",
+          id: `comprobante-${comprobanteId}-${segundo}-${usuarioId}`,
           item,
           registros,
         }
       })
     const grupos = [
-      ...gruposAnulacion,
+      ...gruposComprobante,
       ...lista
         .filter((item) => !consumidos.has(item.id))
         .map((item) => ({ tipo: "registro", id: item.id, item })),
@@ -3158,13 +3167,14 @@ function App() {
     return identificador
   }
 
-  function resumirAnulacionAuditoria(grupo, usuarioNombre) {
+  function resumirComprobanteAuditoria(grupo, usuarioNombre) {
     const detalle = grupo.item.detalle || {}
     const nuevo = detalle.nuevo || {}
     const numero = nuevo.numero || grupo.item.registro_id || "-"
     const lineas = grupo.registros.filter((item) => item.tabla === "entregas").length
+    const accion = grupo.operacion === "anulacion" ? "anuló" : "registró"
 
-    return `${usuarioNombre} anuló el comprobante ${numero}${lineas ? ` (${lineas} línea${lineas === 1 ? "" : "s"})` : ""}`
+    return `${usuarioNombre} ${accion} el comprobante ${numero}${lineas ? ` (${lineas} línea${lineas === 1 ? "" : "s"})` : ""}`
   }
 
 
@@ -3775,7 +3785,7 @@ function App() {
               <h2 style={{ marginTop: "34px" }}>Auditoría</h2>
 
               <p style={ayudaFormulario}>
-                Cambios registrados por los triggers de Supabase. Las anulaciones de comprobantes se agrupan y se pueden desplegar para ver el detalle.
+                Cambios registrados por los triggers de Supabase. Las operaciones de comprobantes se agrupan y se pueden desplegar para ver el detalle.
               </p>
 
               <table style={tabla}>
@@ -3799,18 +3809,19 @@ function App() {
                       const usuario = perfilesPorId.get(item.usuario_id)
                       const nombreUsuario = usuario?.nombre || item.usuario_id || "Sistema"
 
-                      if (grupo.tipo === "anulacion-comprobante") {
+                      if (grupo.tipo === "operacion-comprobante") {
                         const expandida = auditoriaExpandidaId === grupo.id
+                        const accionGrupo = grupo.operacion === "anulacion" ? "ANULACIÓN" : "COMPROBANTE"
 
                         return [
                             <tr key={grupo.id}>
                               <td style={celdaTabla}>{fechaAuditoriaLocal(item.creado_en)}</td>
                               <td style={celdaTabla}>{nombreUsuario}</td>
-                              <td style={celdaTabla}>ANULACIÓN</td>
+                              <td style={celdaTabla}>{accionGrupo}</td>
                               <td style={celdaTabla}>comprobantes</td>
                               <td style={celdaTabla}>
                                 <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                                  <span>{resumirAnulacionAuditoria(grupo, nombreUsuario)}</span>
+                                  <span>{resumirComprobanteAuditoria(grupo, nombreUsuario)}</span>
                                   <button
                                     type="button"
                                     onClick={() => setAuditoriaExpandidaId(expandida ? "" : grupo.id)}
