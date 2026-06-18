@@ -21,25 +21,44 @@ export async function cargarPerfilUsuario(usuarioId) {
 export async function cargarAdministracionUsuarios() {
   await obtenerSesionActiva()
 
-  const [perfilesRespuesta, auditoriaRespuesta] = await Promise.all([
+  const [perfilesRespuesta, auditoria] = await Promise.all([
     supabase
       .from("perfiles")
       .select(COLUMNAS_PERFIL)
       .order("nombre"),
-    supabase
-      .from("auditoria")
-      .select("id, usuario_id, accion, tabla, registro_id, detalle, creado_en")
-      .order("creado_en", { ascending: false })
-      .limit(200),
+    cargarAuditoriaCompleta(),
   ])
 
   if (perfilesRespuesta.error) throw perfilesRespuesta.error
-  if (auditoriaRespuesta.error) throw auditoriaRespuesta.error
 
   return {
     perfiles: perfilesRespuesta.data || [],
-    auditoria: auditoriaRespuesta.data || [],
+    auditoria,
   }
+}
+
+async function cargarAuditoriaCompleta() {
+  const tamanoPagina = 1000
+  const registros = []
+  let desde = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("auditoria")
+      .select("id, usuario_id, accion, tabla, registro_id, detalle, creado_en")
+      .order("creado_en", { ascending: false })
+      .range(desde, desde + tamanoPagina - 1)
+
+    if (error) throw error
+
+    registros.push(...(data || []))
+
+    if (!data || data.length < tamanoPagina) break
+
+    desde += tamanoPagina
+  }
+
+  return registros
 }
 
 export async function guardarPerfilUsuarioSeguro(perfil) {

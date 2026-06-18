@@ -407,6 +407,7 @@ function App() {
     rol: "Consulta",
     estado: "Activo",
   })
+  const [auditoriaExpandidaId, setAuditoriaExpandidaId] = useState("")
 
   const cargarPerfil = useCallback(async (usuarioId) => {
     let data
@@ -1000,6 +1001,7 @@ function App() {
       coincideBusqueda(item, busquedaPerfiles, ["nombre", "correo", "rol", "estado"])
   })
   const perfilesPorId = new Map(perfiles.map((item) => [item.id, item]))
+  const auditoriaAgrupada = agruparAuditoria(auditoria)
   const productosStockCritico = productosStockBajo.filter(
     (producto) => esProductoStockCritico(producto)
   )
@@ -3045,6 +3047,103 @@ function App() {
     }
   }
 
+  function fechaAuditoriaLocal(valor) {
+    const fecha = new Date(valor)
+
+    if (!valor || Number.isNaN(fecha.getTime())) return "-"
+
+    return new Intl.DateTimeFormat("es-CO", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    }).format(fecha)
+  }
+
+  function segundoAuditoria(item) {
+    return String(item.creado_en || "").slice(0, 19)
+  }
+
+  function idComprobanteAuditoria(item) {
+    const detalle = item.detalle || {}
+    const nuevo = detalle.nuevo || {}
+    const anterior = detalle.anterior || {}
+
+    if (item.tabla === "comprobantes") return String(item.registro_id || nuevo.id || anterior.id || "")
+
+    return String(nuevo.comprobante_id || anterior.comprobante_id || "")
+  }
+
+  function esAnulacionComprobante(item) {
+    const detalle = item.detalle || {}
+    const nuevo = detalle.nuevo || {}
+    const anterior = detalle.anterior || {}
+
+    return item.tabla === "comprobantes" &&
+      item.accion === "UPDATE" &&
+      nuevo.estado === "Anulada" &&
+      anterior.estado !== "Anulada"
+  }
+
+  function esAuditoriaRelacionadaConComprobante(item, comprobanteId) {
+    if (!comprobanteId) return false
+
+    return idComprobanteAuditoria(item) === comprobanteId
+  }
+
+  function agruparAuditoria(lista) {
+    const consumidos = new Set()
+    const gruposAnulacion = lista
+      .filter(esAnulacionComprobante)
+      .map((item) => {
+        const comprobanteId = idComprobanteAuditoria(item)
+        const usuarioId = item.usuario_id || ""
+        const segundo = segundoAuditoria(item)
+        const relacionadosBase = lista.filter((candidato) =>
+          segundoAuditoria(candidato) === segundo &&
+          (candidato.usuario_id || "") === usuarioId &&
+          esAuditoriaRelacionadaConComprobante(candidato, comprobanteId)
+        )
+        const productosAnulados = new Set(
+          relacionadosBase
+            .filter((candidato) => candidato.tabla === "movimientos")
+            .map((candidato) => String(candidato.detalle?.nuevo?.producto_id || candidato.detalle?.anterior?.producto_id || ""))
+            .filter(Boolean)
+        )
+        const relacionadosProductos = lista.filter((candidato) =>
+          segundoAuditoria(candidato) === segundo &&
+          (candidato.usuario_id || "") === usuarioId &&
+          candidato.tabla === "productos" &&
+          productosAnulados.has(String(candidato.registro_id || candidato.detalle?.nuevo?.id || candidato.detalle?.anterior?.id || ""))
+        )
+        const registros = [...new Map(
+          [...relacionadosBase, ...relacionadosProductos].map((registro) => [registro.id, registro])
+        ).values()]
+          .sort((a, b) => String(b.creado_en || "").localeCompare(String(a.creado_en || "")))
+
+        registros.forEach((registro) => consumidos.add(registro.id))
+
+        return {
+          tipo: "anulacion-comprobante",
+          id: `anulacion-${comprobanteId}-${segundo}-${usuarioId}`,
+          item,
+          registros,
+        }
+      })
+    const grupos = [
+      ...gruposAnulacion,
+      ...lista
+        .filter((item) => !consumidos.has(item.id))
+        .map((item) => ({ tipo: "registro", id: item.id, item })),
+    ]
+
+    return grupos.sort((a, b) => String(b.item.creado_en || "").localeCompare(String(a.item.creado_en || "")))
+  }
+
   function resumirAuditoria(item) {
     const detalle = item.detalle || {}
     const nuevo = detalle.nuevo || {}
@@ -3057,6 +3156,15 @@ function App() {
     if (item.accion === "DELETE") return `Eliminó ${identificador}`
 
     return identificador
+  }
+
+  function resumirAnulacionAuditoria(grupo, usuarioNombre) {
+    const detalle = grupo.item.detalle || {}
+    const nuevo = detalle.nuevo || {}
+    const numero = nuevo.numero || grupo.item.registro_id || "-"
+    const lineas = grupo.registros.filter((item) => item.tabla === "entregas").length
+
+    return `${usuarioNombre} anuló el comprobante ${numero}${lineas ? ` (${lineas} línea${lineas === 1 ? "" : "s"})` : ""}`
   }
 
 
@@ -3667,7 +3775,7 @@ function App() {
               <h2 style={{ marginTop: "34px" }}>Auditoría</h2>
 
               <p style={ayudaFormulario}>
-                Últimos 200 cambios registrados por los triggers de Supabase.
+                Cambios registrados por los triggers de Supabase. Las anulaciones de comprobantes se agrupan y se pueden desplegar para ver el detalle.
               </p>
 
               <table style={tabla}>
@@ -3681,18 +3789,71 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {auditoria.length === 0 ? (
+                  {auditoriaAgrupada.length === 0 ? (
                     <tr>
                       <td colSpan="5" style={celdaTabla}>Todavía no hay registros de auditoría visibles.</td>
                     </tr>
                   ) : (
-                    auditoria.map((item) => {
+                    auditoriaAgrupada.map((grupo) => {
+                      const item = grupo.item
                       const usuario = perfilesPorId.get(item.usuario_id)
+                      const nombreUsuario = usuario?.nombre || item.usuario_id || "Sistema"
+
+                      if (grupo.tipo === "anulacion-comprobante") {
+                        const expandida = auditoriaExpandidaId === grupo.id
+
+                        return [
+                            <tr key={grupo.id}>
+                              <td style={celdaTabla}>{fechaAuditoriaLocal(item.creado_en)}</td>
+                              <td style={celdaTabla}>{nombreUsuario}</td>
+                              <td style={celdaTabla}>ANULACIÓN</td>
+                              <td style={celdaTabla}>comprobantes</td>
+                              <td style={celdaTabla}>
+                                <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                                  <span>{resumirAnulacionAuditoria(grupo, nombreUsuario)}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAuditoriaExpandidaId(expandida ? "" : grupo.id)}
+                                    style={{ ...botonSecundario, padding: "6px 10px" }}
+                                  >
+                                    {expandida ? "Ocultar detalle" : `Ver detalle (${grupo.registros.length})`}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>,
+                            expandida && (
+                              <tr key={`${grupo.id}-detalle`}>
+                                <td colSpan="5" style={celdaTabla}>
+                                  <table style={{ ...tabla, margin: 0 }}>
+                                    <thead>
+                                      <tr style={encabezadoTabla}>
+                                        <th style={celdaTabla}>Hora</th>
+                                        <th style={celdaTabla}>Acción</th>
+                                        <th style={celdaTabla}>Tabla</th>
+                                        <th style={celdaTabla}>Resumen</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {grupo.registros.map((registro) => (
+                                        <tr key={registro.id}>
+                                          <td style={celdaTabla}>{fechaAuditoriaLocal(registro.creado_en)}</td>
+                                          <td style={celdaTabla}>{registro.accion}</td>
+                                          <td style={celdaTabla}>{registro.tabla}</td>
+                                          <td style={celdaTabla}>{resumirAuditoria(registro)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )
+                          ]
+                      }
 
                       return (
-                        <tr key={item.id}>
-                          <td style={celdaTabla}>{String(item.creado_en || "").slice(0, 19).replace("T", " ")}</td>
-                          <td style={celdaTabla}>{usuario?.nombre || item.usuario_id || "Sistema"}</td>
+                        <tr key={grupo.id}>
+                          <td style={celdaTabla}>{fechaAuditoriaLocal(item.creado_en)}</td>
+                          <td style={celdaTabla}>{nombreUsuario}</td>
                           <td style={celdaTabla}>{item.accion}</td>
                           <td style={celdaTabla}>{item.tabla}</td>
                           <td style={celdaTabla}>{resumirAuditoria(item)}</td>
