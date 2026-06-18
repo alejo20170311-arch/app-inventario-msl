@@ -25,6 +25,15 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
   const nombre = producto.nombre.toLowerCase()
   const tipo = producto.tipo.toLowerCase()
   const variante = String(producto.variante)
+  const sexo = String(colaborador.sexo || "").toLowerCase()
+
+  if (nombre.includes("dama") || nombre.includes("mujer")) {
+    if (sexo !== "femenino") return false
+  }
+
+  if (nombre.includes("hombre")) {
+    if (sexo !== "masculino") return false
+  }
 
   if (tipo === "calzado") {
     return tallaValida(colaborador.tallaBotas) && variante === colaborador.tallaBotas
