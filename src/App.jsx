@@ -4773,12 +4773,13 @@ function App() {
               </div>
             )}
 
-            <Campo texto="Producto">
+            <Campo texto="Producto" style={{ gridColumn: "span 2", minWidth: 0 }}>
               <ListaBuscable
                 value={lineaEntrega.productoId}
                 onChange={(valor) => actualizarLineaEntrega("productoId", valor)}
                 options={opcionesProductosEntrega}
                 placeholder="Selecciona producto"
+                anchoLista="min(760px, calc(100vw - 72px))"
                 style={campoFormulario}
               />
             </Campo>
