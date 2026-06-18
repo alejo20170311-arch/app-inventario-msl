@@ -919,22 +919,56 @@ function App() {
 
     return producto.categoria === filtrosReporte.categoria
   })
-  const productosPedidoAutomatico = productos
-    .filter((producto) =>
-      producto.categoria === categoriaPedido &&
-      producto.estado === "Activo" &&
-      esProductoStockBajo(producto)
-    )
-    .map((producto) => ({
-      ...producto,
-      cantidadSugerida: Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
-    }))
-    .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
   const planeacionDotacion = planearDotacionColaboradores({
     colaboradores,
     entregas,
     fechaBaseISO: fechaLocalISO(),
   })
+  const colaboradoresPendientesDotacion = planeacionDotacion
+    .filter((item) => item.estado !== "Entregado ciclo")
+    .map((item) => colaboradores.find((colaborador) => colaborador.id === item.colaboradorId))
+    .filter(Boolean)
+  const demandaDotacionPorProducto = new Map(
+    productos
+      .filter((producto) => producto.categoria === "Dotación" && producto.estado === "Activo")
+      .map((producto) => [
+        String(producto.id),
+        colaboradoresPendientesDotacion.filter((colaborador) =>
+          productoSugeridoParaColaborador(producto, colaborador)
+        ).length,
+      ])
+  )
+  const productosPedidoAutomatico = productos
+    .filter((producto) => {
+      if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
+
+      if (categoriaPedido === "Dotación") {
+        const demandaProxima = demandaDotacionPorProducto.get(String(producto.id)) || 0
+        const cantidadSugerida = Math.max(
+          0,
+          demandaProxima + Number(producto.stockMinimo) - Number(producto.stockActual)
+        )
+
+        return demandaProxima > 0 && cantidadSugerida > 0
+      }
+
+      return esProductoStockBajo(producto)
+    })
+    .map((producto) => ({
+      ...producto,
+      demandaProxima: categoriaPedido === "Dotación"
+        ? demandaDotacionPorProducto.get(String(producto.id)) || 0
+        : 0,
+      cantidadSugerida: categoriaPedido === "Dotación"
+        ? Math.max(
+          0,
+          (demandaDotacionPorProducto.get(String(producto.id)) || 0) +
+            Number(producto.stockMinimo) -
+            Number(producto.stockActual)
+        )
+        : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
+    }))
+    .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
   const estadosPerfil = ["Activo", "Inactivo"]
@@ -3391,6 +3425,7 @@ function App() {
         { titulo: "Tipo", campo: "tipo" },
         { titulo: "Variante", campo: "variante" },
         { titulo: "Unidad", campo: "unidad" },
+        { titulo: "Demanda próxima", campo: "demandaProxima" },
         { titulo: "Stock actual", campo: "stockActual" },
         { titulo: "Stock mínimo", campo: "stockMinimo" },
         { titulo: "Pedido sugerido", campo: "cantidadSugerida" },

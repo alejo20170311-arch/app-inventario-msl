@@ -189,6 +189,9 @@ export function ReportesPanel({
 
         <section style={panelBloque}>
           <h3 style={{ marginTop: 0 }}>Pedido automático por stock bajo</h3>
+          <p style={{ marginTop: 0, color: "#5f6b85", fontSize: "13px" }}>
+            En Dotacion se calcula con colaboradores pendientes del proximo ciclo: demanda + stock minimo - stock actual.
+          </p>
           <Campo texto="Categoría del pedido">
             <ListaBuscable
               value={categoriaPedido}
@@ -215,6 +218,7 @@ export function ReportesPanel({
             <thead>
               <tr style={encabezadoTabla}>
                 <th style={celdaTabla}>Producto</th>
+                {categoriaPedido === categoriasDisponibles[0] && <th style={celdaTabla}>Demanda proxima</th>}
                 <th style={celdaTabla}>Stock</th>
                 <th style={celdaTabla}>Mínimo</th>
                 <th style={celdaTabla}>Pedido sugerido</th>
@@ -223,12 +227,13 @@ export function ReportesPanel({
             <tbody>
               {productosPedidoAutomatico.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={celdaTabla}>No hay productos de {categoriaPedido} por pedir.</td>
+                  <td colSpan={categoriaPedido === categoriasDisponibles[0] ? 5 : 4} style={celdaTabla}>No hay productos de {categoriaPedido} por pedir.</td>
                 </tr>
               ) : (
                 productosPedidoAutomatico.map((producto) => (
                   <tr key={producto.id}>
                     <td style={celdaTabla}>{producto.nombre} - {producto.variante}</td>
+                    {categoriaPedido === categoriasDisponibles[0] && <td style={celdaTabla}>{producto.demandaProxima}</td>}
                     <td style={celdaTabla}>{producto.stockActual} {producto.unidad}</td>
                     <td style={celdaTabla}>{producto.stockMinimo}</td>
                     <td style={celdaTabla}>{producto.cantidadSugerida} {producto.unidad}</td>
