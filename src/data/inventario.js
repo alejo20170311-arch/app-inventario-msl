@@ -150,7 +150,7 @@ export const tiposDotacion = [
   "Bono Sodexo",
   "MSL Bata azul oscura dama admon+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura dama calidad+Bota de seguridad+MSL Cofia unisex",
-  "MSL Bata Verde oscura hombre calidad+Bota de seguridad+MSL Cofia unisex",
+  "MSL Bata azul oscura hombre calidad+Bota de seguridad+MSL Cofia unisex",
   "MSL Camisa azul clara hombre p. venta+MSL Jean hombre+Bota de seguridad",
   "MSL Camisa jean hombre mtto+MSL Jean hombre+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura hombre admon+MSL Cofia unisex",
