@@ -36,6 +36,7 @@ import {
   itemCatalogoVacio,
   lineaEntregaVacia,
   subAreasDisponibles,
+  tiposDotacion,
 } from "./data/inventario"
 import {
   cargarDatosInventario,
@@ -79,6 +80,7 @@ import {
   limpiarObservacion,
   normalizarTexto,
   obtenerStockMinimo,
+  productoPedidoDotacionParaColaborador,
   productoSugeridoParaColaborador,
 } from "./utils/inventario"
 import {
@@ -674,7 +676,7 @@ function App() {
   )
   const colaboradoresFiltrados = colaboradores.filter((item) =>
     coincideFiltroColaborador(item, filtroColaboradores) &&
-    coincideBusqueda(item, busquedaColaboradores, ["identificacion", "nombreCompleto", "cargo", "subArea", "grupo", "centroCostos", "nombreCentroCostos", "sexo", "estado", "tallaAntifluido", "tallaBata", "tallaCamisa", "tallaPantalon", "tallaBotas"])
+    coincideBusqueda(item, busquedaColaboradores, ["identificacion", "nombreCompleto", "cargo", "subArea", "grupo", "centroCostos", "nombreCentroCostos", "tipoDotacion", "sexo", "estado", "tallaAntifluido", "tallaBata", "tallaCamisa", "tallaPantalon", "tallaBotas"])
   )
   const entregasFiltradas = entregas.filter((item) =>
     coincideFiltroEntrega(item, filtroEntregas) &&
@@ -934,7 +936,7 @@ function App() {
       .map((producto) => [
         String(producto.id),
         colaboradoresPendientesDotacion.filter((colaborador) =>
-          productoSugeridoParaColaborador(producto, colaborador)
+          productoPedidoDotacionParaColaborador(producto, colaborador)
         ).length,
       ])
   )
@@ -2410,6 +2412,7 @@ function App() {
       grupo: item.grupo,
       centroCostos: item.centroCostos,
       nombreCentroCostos: item.nombreCentroCostos,
+      tipoDotacion: item.tipoDotacion || "No aplica",
       sexo: item.sexo,
       estado: item.estado,
       tallaAntifluido: item.tallaAntifluido,
@@ -2779,6 +2782,7 @@ function App() {
       grupo: textoSeguro(colaborador.grupo, 40),
       centroCostos: textoSeguro(colaborador.centroCostos, 40),
       nombreCentroCostos: textoSeguro(colaborador.nombreCentroCostos, 160),
+      tipoDotacion: textoSeguro(colaborador.tipoDotacion || "No aplica", 500),
       sexo: textoSeguro(colaborador.sexo, 40),
       tallaAntifluido: textoSeguro(colaborador.tallaAntifluido, 20),
       tallaBata: textoSeguro(colaborador.tallaBata, 20),
@@ -3318,6 +3322,7 @@ function App() {
       { titulo: "Grupo", campo: "grupo" },
       { titulo: "Centro de costos", campo: "centroCostos" },
       { titulo: "Nombre centro de costos", campo: "nombreCentroCostos" },
+      { titulo: "Tipo dotación", campo: "tipoDotacion" },
       { titulo: "Sexo", campo: "sexo" },
       { titulo: "Estado", campo: "estado" },
       { titulo: "Talla antifluido", campo: "tallaAntifluido" },
@@ -3566,6 +3571,7 @@ function App() {
             grupo: textoSeguro(obtenerValor(fila, ["Grupo"]) || "", 40),
             centroCostos: textoSeguro(obtenerValor(fila, ["Centro de costos", "Centro costos", "Ceco"]) || centroPorNombre?.codigo || "", 40),
             nombreCentroCostos: textoSeguro(nombreCentro || centroPorNombre?.nombre || "", 160),
+            tipoDotacion: textoSeguro(obtenerValor(fila, ["Tipo dotación", "Tipo dotacion"]) || "No aplica", 500),
             sexo: textoSeguro(obtenerValor(fila, ["Sexo"]) || "Femenino", 40),
             estado: textoSeguro(obtenerValor(fila, ["Estado"]) || "Activo", 20),
             tallaAntifluido: textoSeguro(obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A", 20),
@@ -4774,6 +4780,17 @@ function App() {
               />
             </Campo>
 
+            <Campo texto="Tipo dotación" style={{ gridColumn: "span 2", minWidth: 0 }}>
+              <ListaBuscable
+                value={colaborador.tipoDotacion}
+                onChange={(valor) => actualizarColaborador("tipoDotacion", valor || "No aplica")}
+                options={tiposDotacion}
+                placeholder="Selecciona paquete de dotación"
+                soloLista
+                style={campoFormulario}
+              />
+            </Campo>
+
             <Campo texto="Sexo">
               <ListaBuscable
                 value={colaborador.sexo}
@@ -4886,6 +4903,7 @@ function App() {
                 <th style={celdaTabla}>Grupo</th>
                 <th style={celdaTabla}>Centro costos</th>
                 <th style={celdaTabla}>Nombre centro</th>
+                <th style={celdaTabla}>Tipo dotación</th>
                 <th style={celdaTabla}>Tallas</th>
                 <th style={celdaTabla}>Estado</th>
                 <th style={celdaTabla}>Acciones</th>
@@ -4894,7 +4912,7 @@ function App() {
             <tbody>
               {colaboradoresFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={celdaTabla}>No hay colaboradores que coincidan con la búsqueda.</td>
+                  <td colSpan="10" style={celdaTabla}>No hay colaboradores que coincidan con la búsqueda.</td>
                 </tr>
               ) : (
               colaboradoresFiltrados.map((item) => (
@@ -4905,6 +4923,7 @@ function App() {
                   <td style={celdaTabla}>{item.grupo}</td>
                   <td style={celdaTabla}>{item.centroCostos}</td>
                   <td style={celdaTabla}>{item.nombreCentroCostos}</td>
+                  <td style={celdaTabla}>{item.tipoDotacion || "No aplica"}</td>
                   <td style={celdaTabla}>
                     Antifluido: {item.tallaAntifluido} | Bata: {item.tallaBata} | Camisa: {item.tallaCamisa} | Pantalón: {item.tallaPantalon} | Botas: {item.tallaBotas}
                   </td>

@@ -130,6 +130,7 @@ export const colaboradorVacio = {
   grupo: "",
   centroCostos: "",
   nombreCentroCostos: "",
+  tipoDotacion: "No aplica",
   sexo: "Femenino",
   estado: "Activo",
   tallaAntifluido: "N/A",
@@ -138,6 +139,22 @@ export const colaboradorVacio = {
   tallaPantalon: "N/A",
   tallaBotas: "",
 }
+
+export const tiposDotacion = [
+  "No aplica",
+  "MSL Camisa azul 3/4 clara dama p. venta+MSL Jean mujer+Bota de seguridad",
+  "MSL Operario azul dama uniforme+Bota de seguridad+MSL Cofia unisex",
+  "MSL Bata azul oscura hombre admon+Bota de seguridad+MSL Cofia unisex",
+  "MSL Operario azul hombre uniforme+Bota de seguridad+MSL Cofia unisex",
+  "MSL Camisa polo hombre+MSL Jean hombre+Bota de seguridad+MSL Cofia unisex",
+  "Bono Sodexo",
+  "MSL Bata azul oscura dama admon+Bota de seguridad+MSL Cofia unisex",
+  "MSL Bata azul oscura dama calidad+Bota de seguridad+MSL Cofia unisex",
+  "MSL Bata Verde oscura hombre calidad+Bota de seguridad+MSL Cofia unisex",
+  "MSL Camisa azul clara hombre p. venta+MSL Jean hombre+Bota de seguridad",
+  "MSL Camisa jean hombre mtto+MSL Jean hombre+Bota de seguridad+MSL Cofia unisex",
+  "MSL Bata azul oscura hombre admon+MSL Cofia unisex",
+]
 
 export const gruposDisponibles = ["51", "52", "72", "73"]
 

@@ -19,6 +19,37 @@ export function obtenerStockMinimo(productoCatalogo) {
 export function tallaValida(talla) {
   return talla && talla !== "N/A"
 }
+export function productoIncluidoEnTipoDotacion(producto, tipoDotacion) {
+  const partes = String(tipoDotacion || "")
+    .split("+")
+    .map((item) => normalizarTexto(item))
+    .filter(Boolean)
+  const nombreProducto = normalizarTexto(producto.nombre)
+  const nombreProductoSinNumeros = nombreProducto.replace(/[0-9]/g, "")
+
+  if (partes.length === 0 || partes.includes("noaplica")) return false
+
+  return partes.some((parte) => {
+    const parteSinNumeros = parte.replace(/[0-9]/g, "")
+
+    return parte === nombreProducto ||
+      parte.includes(nombreProducto) ||
+      nombreProducto.includes(parte) ||
+      (parteSinNumeros && parteSinNumeros === nombreProductoSinNumeros)
+  })
+}
+export function productoRequiereTalla(producto) {
+  const nombre = String(producto.nombre || "").toLowerCase()
+  const tipo = String(producto.tipo || "").toLowerCase()
+
+  return tipo === "calzado" ||
+    tipo === "bata" ||
+    tipo === "uniforme" ||
+    tipo === "camisa" ||
+    tipo === "pantalon" ||
+    tipo === "jean" ||
+    nombre.includes("antifluido")
+}
 export function productoSugeridoParaColaborador(producto, colaborador) {
   if (!colaborador) return false
 
@@ -55,7 +86,11 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
     return tallaValida(colaborador.tallaPantalon) && variante === colaborador.tallaPantalon
   }
 
-  return false
+  return !productoRequiereTalla(producto)
+}
+export function productoPedidoDotacionParaColaborador(producto, colaborador) {
+  return productoIncluidoEnTipoDotacion(producto, colaborador?.tipoDotacion) &&
+    productoSugeridoParaColaborador(producto, colaborador)
 }
 export function normalizarBusqueda(texto) {
   return String(texto || "")

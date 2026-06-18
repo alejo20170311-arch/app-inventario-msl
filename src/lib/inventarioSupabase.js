@@ -81,6 +81,7 @@ export function colaboradorDesdeSupabase(item) {
     grupo: item.grupo,
     centroCostos: item.centro_costos,
     nombreCentroCostos: item.nombre_centro_costos,
+    tipoDotacion: item.tipo_dotacion || "No aplica",
     sexo: item.sexo,
     estado: item.estado,
     tallaAntifluido: item.talla_antifluido,
@@ -100,6 +101,7 @@ export function colaboradorParaSupabase(colaborador) {
     grupo: colaborador.grupo,
     centro_costos: colaborador.centroCostos,
     nombre_centro_costos: colaborador.nombreCentroCostos,
+    tipo_dotacion: colaborador.tipoDotacion || "No aplica",
     sexo: colaborador.sexo,
     estado: colaborador.estado,
     talla_antifluido: colaborador.tallaAntifluido,
@@ -291,6 +293,31 @@ async function cargarComprasInventario() {
   return (data || []).map(compraDesdeSupabase)
 }
 
+async function cargarColaboradoresInventario() {
+  const columnasBase = "id, identificacion, nombre_completo, cargo, sub_area, grupo, centro_costos, nombre_centro_costos, sexo, estado, talla_antifluido, talla_bata, talla_camisa, talla_pantalon, talla_botas"
+  const respuesta = await supabase
+    .from("colaboradores")
+    .select(`${columnasBase}, tipo_dotacion`)
+    .order("nombre_completo")
+
+  if (!respuesta.error) return respuesta
+
+  const respaldo = await supabase
+    .from("colaboradores")
+    .select(columnasBase)
+    .order("nombre_completo")
+
+  if (respaldo.error) return respaldo
+
+  return {
+    ...respaldo,
+    data: (respaldo.data || []).map((item) => ({
+      ...item,
+      tipo_dotacion: "No aplica",
+    })),
+  }
+}
+
 function lanzarSiError(respuesta) {
   if (respuesta.error) throw respuesta.error
 
@@ -313,10 +340,7 @@ export async function cargarDatosInventario() {
       .from("productos")
       .select("id, nombre, categoria, tipo, variante, unidad, stock_actual, stock_minimo, ubicacion, estado")
       .order("nombre"),
-    supabase
-      .from("colaboradores")
-      .select("id, identificacion, nombre_completo, cargo, sub_area, grupo, centro_costos, nombre_centro_costos, sexo, estado, talla_antifluido, talla_bata, talla_camisa, talla_pantalon, talla_botas")
-      .order("nombre_completo"),
+    cargarColaboradoresInventario(),
     supabase
       .from("movimientos")
       .select("id, comprobante_id, producto_id, producto, variante, unidad, tipo_movimiento, cantidad, fecha, observacion, stock_resultante, creado_en")
