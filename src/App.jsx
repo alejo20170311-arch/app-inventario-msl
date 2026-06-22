@@ -969,6 +969,49 @@ function App() {
         })
       })
     })
+  const obtenerValorUnitarioProducto = (producto) =>
+    valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
+    valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
+    0
+  const detallePedidoDotacionPorCentro = Object.values(
+    colaboradoresPendientesDotacion.reduce((acumulado, colaborador) => {
+      productos
+        .filter((producto) =>
+          producto.categoria === "Dotación" &&
+          producto.estado === "Activo" &&
+          productoPedidoDotacionParaColaborador(producto, colaborador)
+        )
+        .forEach((producto) => {
+          const clave = [
+            colaborador.centroCostos || "-",
+            colaborador.nombreCentroCostos || "Sin centro",
+            producto.id,
+          ].join("__")
+          const valorUnitario = obtenerValorUnitarioProducto(producto)
+
+          acumulado[clave] = acumulado[clave] || {
+            centroCostos: colaborador.centroCostos || "-",
+            nombreCentroCostos: colaborador.nombreCentroCostos || "Sin centro",
+            producto: producto.nombre,
+            categoria: producto.categoria,
+            tipo: producto.tipo,
+            variante: producto.variante,
+            unidad: producto.unidad,
+            cantidad: 0,
+            valorUnitario,
+            valorTotal: 0,
+          }
+          acumulado[clave].cantidad += 1
+          acumulado[clave].valorTotal = acumulado[clave].cantidad * valorUnitario
+        })
+
+      return acumulado
+    }, {})
+  ).sort((a, b) =>
+    String(a.centroCostos).localeCompare(String(b.centroCostos)) ||
+    a.producto.localeCompare(b.producto) ||
+    String(a.variante).localeCompare(String(b.variante))
+  )
   const productosPedidoAutomatico = productos
     .filter((producto) => {
       if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
@@ -1000,9 +1043,7 @@ function App() {
         : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
     }))
     .map((producto) => {
-      const valorUnitario = valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
-        valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
-        0
+      const valorUnitario = obtenerValorUnitarioProducto(producto)
 
       return {
         ...producto,
@@ -3462,7 +3503,7 @@ function App() {
   }
 
   function exportarPedidoAutomatico() {
-    descargarXlsx(`pedido-sugerido-${categoriaPedido.toLowerCase()}-msl.xlsx`, [{
+    const hojasPedido = [{
       nombre: `Pedido ${categoriaPedido}`,
       columnas: [
         { titulo: "Producto", campo: "nombre" },
@@ -3479,7 +3520,28 @@ function App() {
         { titulo: "Ubicación", campo: "ubicacion" },
       ],
       filas: productosPedidoAutomatico,
-    }])
+    }]
+
+    if (categoriaPedido === "Dotación") {
+      hojasPedido.push({
+        nombre: "Detalle por centro",
+        columnas: [
+          { titulo: "Centro de costos", campo: "centroCostos" },
+          { titulo: "Nombre centro de costos", campo: "nombreCentroCostos" },
+          { titulo: "Producto", campo: "producto" },
+          { titulo: "Categoría", campo: "categoria" },
+          { titulo: "Tipo", campo: "tipo" },
+          { titulo: "Variante", campo: "variante" },
+          { titulo: "Unidad", campo: "unidad" },
+          { titulo: "Cantidad", campo: "cantidad" },
+          { titulo: "Valor unitario", campo: "valorUnitario" },
+          { titulo: "Valor total", campo: "valorTotal" },
+        ],
+        filas: detallePedidoDotacionPorCentro,
+      })
+    }
+
+    descargarXlsx(`pedido-sugerido-${categoriaPedido.toLowerCase()}-msl.xlsx`, hojasPedido)
   }
 
   function exportarReporteCompletoExcel() {
