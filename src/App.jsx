@@ -973,7 +973,7 @@ function App() {
     valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
     valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
     0
-  const detallePedidoDotacionPorCentro = Object.values(
+  const demandaBrutaDotacionPorCentro = Object.values(
     colaboradoresPendientesDotacion.reduce((acumulado, colaborador) => {
       productos
         .filter((producto) =>
@@ -997,20 +997,17 @@ function App() {
             tipo: producto.tipo,
             variante: producto.variante,
             unidad: producto.unidad,
+            productoId: producto.id,
+            demandaBruta: 0,
             cantidad: 0,
             valorUnitario,
             valorTotal: 0,
           }
-          acumulado[clave].cantidad += 1
-          acumulado[clave].valorTotal = acumulado[clave].cantidad * valorUnitario
+          acumulado[clave].demandaBruta += 1
         })
 
       return acumulado
     }, {})
-  ).sort((a, b) =>
-    String(a.centroCostos).localeCompare(String(b.centroCostos)) ||
-    a.producto.localeCompare(b.producto) ||
-    String(a.variante).localeCompare(String(b.variante))
   )
   const productosPedidoAutomatico = productos
     .filter((producto) => {
@@ -1052,6 +1049,72 @@ function App() {
       }
     })
     .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
+  const pedidoSugeridoPorProducto = new Map(
+    productosPedidoAutomatico.map((producto) => [String(producto.id), Number(producto.cantidadSugerida || 0)])
+  )
+  const detallePedidoDotacionPorCentro = Object.values(
+    demandaBrutaDotacionPorCentro.reduce((grupos, item) => {
+      const productoId = String(item.productoId)
+
+      grupos[productoId] = grupos[productoId] || []
+      grupos[productoId].push(item)
+
+      return grupos
+    }, {})
+  )
+    .flatMap((itemsProducto) => {
+      const productoId = String(itemsProducto[0]?.productoId || "")
+      const pedidoSugerido = pedidoSugeridoPorProducto.get(productoId) || 0
+      const demandaTotal = itemsProducto.reduce((total, item) => total + Number(item.demandaBruta || 0), 0)
+
+      if (pedidoSugerido <= 0 || demandaTotal <= 0) return []
+
+      const repartidos = itemsProducto.map((item) => {
+        const exacto = (Number(item.demandaBruta || 0) / demandaTotal) * pedidoSugerido
+        const cantidadBase = Math.floor(exacto)
+
+        return {
+          ...item,
+          cantidad: cantidadBase,
+          residuo: exacto - cantidadBase,
+        }
+      })
+      let unidadesRestantes = pedidoSugerido - repartidos.reduce((total, item) => total + item.cantidad, 0)
+
+      repartidos
+        .slice()
+        .sort((a, b) =>
+          b.residuo - a.residuo ||
+          Number(b.demandaBruta || 0) - Number(a.demandaBruta || 0) ||
+          String(a.centroCostos).localeCompare(String(b.centroCostos))
+        )
+        .forEach((item) => {
+          if (unidadesRestantes <= 0) return
+
+          item.cantidad += 1
+          unidadesRestantes -= 1
+        })
+
+      return repartidos
+        .filter((item) => item.cantidad > 0)
+        .map((item) => ({
+          centroCostos: item.centroCostos,
+          nombreCentroCostos: item.nombreCentroCostos,
+          producto: item.producto,
+          categoria: item.categoria,
+          tipo: item.tipo,
+          variante: item.variante,
+          unidad: item.unidad,
+          cantidad: item.cantidad,
+          valorUnitario: item.valorUnitario,
+          valorTotal: Number(item.valorUnitario || 0) * Number(item.cantidad || 0),
+        }))
+    })
+    .sort((a, b) =>
+      String(a.centroCostos).localeCompare(String(b.centroCostos)) ||
+      a.producto.localeCompare(b.producto) ||
+      String(a.variante).localeCompare(String(b.variante))
+    )
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
   const estadosPerfil = ["Activo", "Inactivo"]
