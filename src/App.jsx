@@ -940,6 +940,35 @@ function App() {
         ).length,
       ])
   )
+  const claveProductoPrecio = (item) => [
+    normalizarTexto(item.categoria),
+    normalizarTexto(item.producto || item.nombre),
+    normalizarTexto(item.tipo),
+    normalizarTexto(item.variante),
+    normalizarTexto(item.unidad),
+  ].join("__")
+  const valorUltimaCompraPorProducto = new Map()
+  compras
+    .slice()
+    .sort((a, b) =>
+      String(b.fecha || "").localeCompare(String(a.fecha || "")) ||
+      String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""))
+    )
+    .forEach((compraItem) => {
+      ;(compraItem.lineas || []).forEach((linea) => {
+        const valorUnitario = Number(linea.valorUnitario || 0)
+        const claves = [
+          linea.productoId ? `id:${linea.productoId}` : "",
+          `datos:${claveProductoPrecio(linea)}`,
+        ].filter(Boolean)
+
+        claves.forEach((clave) => {
+          if (!valorUltimaCompraPorProducto.has(clave)) {
+            valorUltimaCompraPorProducto.set(clave, valorUnitario)
+          }
+        })
+      })
+    })
   const productosPedidoAutomatico = productos
     .filter((producto) => {
       if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
@@ -970,6 +999,17 @@ function App() {
         )
         : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
     }))
+    .map((producto) => {
+      const valorUnitario = valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
+        valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
+        0
+
+      return {
+        ...producto,
+        valorUnitario,
+        valorTotal: Number(valorUnitario) * Number(producto.cantidadSugerida || 0),
+      }
+    })
     .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
@@ -3434,6 +3474,8 @@ function App() {
         { titulo: "Stock actual", campo: "stockActual" },
         { titulo: "Stock mínimo", campo: "stockMinimo" },
         { titulo: "Pedido sugerido", campo: "cantidadSugerida" },
+        { titulo: "Valor unitario", campo: "valorUnitario" },
+        { titulo: "Valor total", campo: "valorTotal" },
         { titulo: "Ubicación", campo: "ubicacion" },
       ],
       filas: productosPedidoAutomatico,
