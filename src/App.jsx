@@ -162,6 +162,23 @@ function accionDentroDelLimite(registroAcciones, accion, esperaMs) {
   return true
 }
 
+function conTiempoMaximo(promesa, esperaMs, mensaje) {
+  let temporizador
+  const limite = new Promise((_, rechazar) => {
+    temporizador = window.setTimeout(() => {
+      const error = new Error(mensaje)
+
+      error.name = "TiempoEsperaAgotado"
+      rechazar(error)
+    }, esperaMs)
+  })
+
+  return Promise.race([
+    promesa.finally(() => window.clearTimeout(temporizador)),
+    limite,
+  ])
+}
+
 function crearCompraVacia() {
   return {
     numeroFactura: "",
@@ -3003,7 +3020,11 @@ function App() {
   async function registrarEntrega(evento) {
     evento.preventDefault()
     if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite registrar entregas.")) return
-    if (accionGuardando || !accionPermitida("entrega", 1800)) return
+    if (accionGuardando) {
+      mostrarMensaje("Espera a que termine la acción en proceso antes de registrar otra entrega.", "info")
+      return
+    }
+    if (!accionPermitida("entrega", 1800)) return
 
     if (!colaboradorEntrega) {
       mostrarMensaje("Selecciona colaborador para registrar la entrega.")
@@ -3067,10 +3088,14 @@ function App() {
     setAccionGuardando("entrega")
 
     try {
-      const entregaGuardada = await registrarEntregaRpc({
-        entrega,
-        lineasEntregaDetalle,
-      })
+      const entregaGuardada = await conTiempoMaximo(
+        registrarEntregaRpc({
+          entrega,
+          lineasEntregaDetalle,
+        }),
+        45000,
+        "La entrega está tardando más de lo normal. Revisa el historial antes de intentarlo otra vez."
+      )
       const stockPorProducto = new Map(
         entregaGuardada.entregas.map((item) => [
           String(item.productoId),
@@ -5252,9 +5277,14 @@ function App() {
               <input value={entrega.observacion} onChange={(e) => actualizarEntrega("observacion", e.target.value)} placeholder="Ej: Entrega inicial, reposición autorizada" style={campoFormulario} />
             </Campo>
 
-            <button disabled={estaGuardando("entrega")} style={botonPrincipal}>
+            <button
+              disabled={Boolean(accionGuardando)}
+              style={accionGuardando && !estaGuardando("entrega")
+                ? { ...botonPrincipal, opacity: 0.65, cursor: "not-allowed" }
+                : botonPrincipal}
+            >
               <ClipboardCheck size={18} />
-              {estaGuardando("entrega") ? "Guardando..." : "Registrar entrega completa"}
+              {estaGuardando("entrega") ? "Guardando..." : accionGuardando ? "Espera..." : "Registrar entrega completa"}
             </button>
           </form>
             </>
