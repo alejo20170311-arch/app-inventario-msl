@@ -1,5 +1,26 @@
 import { valorSeguro } from "./inventario"
 
+function formatearFechaHoraComprobante(valor) {
+  if (!valor) return ""
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(valor))) return valor
+
+  const fecha = new Date(valor)
+
+  if (Number.isNaN(fecha.getTime())) return String(valor)
+
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(fecha)
+}
+
 export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
   const logoUrl = new URL(`${import.meta.env.BASE_URL}logo-msl-Azul.jpg`, window.location.origin).href
   const entregasComprobante = entregaSeleccionada.comprobanteId
@@ -26,16 +47,11 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
   const esComprobanteEpp = categoriasComprobante.size === 1 && categoriasComprobante.has("EPP")
   const tituloCategoria = esComprobanteEpp ? "EPP" : "DOTACION"
   const codigoFormato = esComprobanteEpp ? "F-SST-33" : "F-GH-11"
-  const fechaHoraGeneracion = new Intl.DateTimeFormat("es-CO", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(new Date())
+  const fechaHoraComprobante = formatearFechaHoraComprobante(
+    entregaSeleccionada.creadoEn ||
+    entregasComprobante.find((item) => item.creadoEn)?.creadoEn ||
+    entregaSeleccionada.fecha
+  )
   const nombreResponsableFirma = responsableFirma.nombre || entregaSeleccionada.responsable
   const documentoResponsableFirma = responsableFirma.identificacion || responsableFirma.documento || ""
   const correoResponsableFirma = responsableFirma.correo || responsableFirma.email || ""
@@ -43,7 +59,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
     <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(nombreResponsableFirma)}</span></div>
     ${documentoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>${valorSeguro(documentoResponsableFirma)}</span></div>` : ""}
     ${correoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Email</span><span>${valorSeguro(correoResponsableFirma)}</span></div>` : ""}
-    <div class="fila-firma"><span class="etiqueta-firma">Fecha y hora</span><span>${valorSeguro(fechaHoraGeneracion)} - TZ: GMT-5</span></div>
+    <div class="fila-firma"><span class="etiqueta-firma">Fecha y hora</span><span>${valorSeguro(fechaHoraComprobante)}${fechaHoraComprobante.includes(":") ? " - TZ: GMT-5" : ""}</span></div>
   `
   const textoLegal = esComprobanteEpp
     ? `

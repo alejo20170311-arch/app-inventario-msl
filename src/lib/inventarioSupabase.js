@@ -199,6 +199,7 @@ export function entregaDesdeSupabase(item) {
     unidad: item.unidad,
     cantidad: numero(item.cantidad),
     fecha: comprobante.fecha || "",
+    creadoEn: comprobante.creado_en || item.creado_en,
     motivo: texto(comprobante.motivo),
     responsable: texto(comprobante.responsable),
     observacion: texto(comprobante.observacion),
@@ -365,6 +366,7 @@ export async function cargarDatosInventario() {
         comprobantes (
           numero,
           fecha,
+          creado_en,
           motivo,
           responsable,
           observacion,

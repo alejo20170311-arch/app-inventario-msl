@@ -3096,8 +3096,13 @@ function App() {
         45000,
         "La entrega está tardando más de lo normal. Revisa el historial antes de intentarlo otra vez."
       )
+      const creadoEnEntrega = new Date().toISOString()
+      const entregasGuardadas = entregaGuardada.entregas.map((item) => ({
+        ...item,
+        creadoEn: item.creadoEn || item.creado_en || creadoEnEntrega,
+      }))
       const stockPorProducto = new Map(
-        entregaGuardada.entregas.map((item) => [
+        entregasGuardadas.map((item) => [
           String(item.productoId),
           Number(item.stockResultante),
         ])
@@ -3113,10 +3118,10 @@ function App() {
         }
       })
       const numeroComprobante = entregaGuardada.comprobante?.numero ||
-        entregaGuardada.entregas[0]?.numeroComprobante
+        entregasGuardadas[0]?.numeroComprobante
 
       setProductos(productosActualizados)
-      setEntregas([...entregaGuardada.entregas, ...entregas])
+      setEntregas([...entregasGuardadas, ...entregas])
       setMovimientos([...entregaGuardada.movimientos, ...movimientos])
       setEntrega(crearEntregaVacia())
       setLineaEntrega(lineaEntregaVacia)
