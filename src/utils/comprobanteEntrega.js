@@ -26,6 +26,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
   const esComprobanteEpp = categoriasComprobante.size === 1 && categoriasComprobante.has("EPP")
   const tituloCategoria = esComprobanteEpp ? "EPP" : "DOTACION"
   const codigoFormato = esComprobanteEpp ? "F-SST-33" : "F-GH-11"
+  const fechaFirmaDigital = entregaSeleccionada.fecha || new Date().toISOString().slice(0, 10)
   const textoLegal = esComprobanteEpp
     ? `
             <p>Declaro que recibo los elementos de proteccion personal relacionados en este documento en buen estado y para uso durante mis actividades laborales.</p>
@@ -172,6 +173,10 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           .campo:nth-child(odd) {
             border-right: 1px solid #D8DEE6;
           }
+          .campo.ancho-total {
+            grid-column: 1 / -1;
+            border-right: none;
+          }
           .label {
             display: block;
             font-size: 11px;
@@ -220,16 +225,21 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             border: 1px solid ${estadoComprobante === "Activa" ? "#008A4C" : "#B91C1C"};
             font-weight: bold;
           }
-          .firmas {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 40px;
-            margin-top: 70px;
+          .constancia-firma {
+            margin-top: 24px;
+            border-left: 2px solid #000000;
+            padding: 2px 0 2px 8px;
+            font-size: 12px;
+            line-height: 1.25;
+            max-width: 430px;
           }
-          .firma {
-            border-top: 1px solid #000000;
-            padding-top: 8px;
-            font-size: 13px;
+          .fila-firma {
+            display: grid;
+            grid-template-columns: 130px 1fr;
+            gap: 8px;
+          }
+          .etiqueta-firma {
+            font-weight: bold;
           }
           .texto-legal {
             margin-top: 24px;
@@ -307,8 +317,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
               <div class="campo"><span class="label">Identificación</span><span class="valor">${valorSeguro(entregaSeleccionada.identificacion)}</span></div>
               <div class="campo"><span class="label">Grupo</span><span class="valor">${valorSeguro(entregaSeleccionada.grupo)}</span></div>
               <div class="campo"><span class="label">Centro de costos</span><span class="valor">${valorSeguro(entregaSeleccionada.centroCostos)}</span></div>
-              <div class="campo"><span class="label">Nombre centro de costos</span><span class="valor">${valorSeguro(entregaSeleccionada.nombreCentroCostos)}</span></div>
-              <div class="campo"><span class="label">Responsable entrega</span><span class="valor">${valorSeguro(entregaSeleccionada.responsable)}</span></div>
+              <div class="campo ancho-total"><span class="label">Nombre centro de costos</span><span class="valor">${valorSeguro(entregaSeleccionada.nombreCentroCostos)}</span></div>
             </div>
           </section>
 
@@ -342,16 +351,13 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
             ${textoLegal}
           </section>
 
-          <section class="firmas">
-            <div class="firma">
-              Firma colaborador<br />
-              ${valorSeguro(entregaSeleccionada.colaborador)}<br />
-              Documento: ${valorSeguro(entregaSeleccionada.identificacion)}
-            </div>
-            <div class="firma">
-              Firma responsable de entrega<br />
-              ${valorSeguro(entregaSeleccionada.responsable)}
-            </div>
+          <section class="constancia-firma">
+            <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(entregaSeleccionada.colaborador)}</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>${valorSeguro(entregaSeleccionada.identificacion)}</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Email</span><span>No registrado</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Fecha</span><span>${valorSeguro(fechaFirmaDigital)} - TZ: GMT-5</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">IP</span><span>No registrado</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Token</span><span>No registrado</span></div>
           </section>
 
           <p class="nota-sistema">
