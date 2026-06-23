@@ -26,7 +26,16 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
   const esComprobanteEpp = categoriasComprobante.size === 1 && categoriasComprobante.has("EPP")
   const tituloCategoria = esComprobanteEpp ? "EPP" : "DOTACION"
   const codigoFormato = esComprobanteEpp ? "F-SST-33" : "F-GH-11"
-  const fechaFirmaDigital = entregaSeleccionada.fecha || new Date().toISOString().slice(0, 10)
+  const fechaHoraGeneracion = new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date())
   const nombreResponsableFirma = responsableFirma.nombre || entregaSeleccionada.responsable
   const documentoResponsableFirma = responsableFirma.identificacion || responsableFirma.documento || ""
   const correoResponsableFirma = responsableFirma.correo || responsableFirma.email || ""
@@ -34,7 +43,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
     <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(nombreResponsableFirma)}</span></div>
     ${documentoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>${valorSeguro(documentoResponsableFirma)}</span></div>` : ""}
     ${correoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Email</span><span>${valorSeguro(correoResponsableFirma)}</span></div>` : ""}
-    <div class="fila-firma"><span class="etiqueta-firma">Fecha</span><span>${valorSeguro(fechaFirmaDigital)} - TZ: GMT-5</span></div>
+    <div class="fila-firma"><span class="etiqueta-firma">Fecha y hora</span><span>${valorSeguro(fechaHoraGeneracion)} - TZ: GMT-5</span></div>
   `
   const textoLegal = esComprobanteEpp
     ? `
@@ -242,6 +251,11 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
             line-height: 1.25;
             max-width: 430px;
           }
+          .titulo-firma {
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+          }
           .fila-firma {
             display: grid;
             grid-template-columns: 130px 1fr;
@@ -361,6 +375,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
           </section>
 
           <section class="constancia-firma">
+            <div class="titulo-firma">Responsable de entrega</div>
             ${filasFirmaResponsable}
           </section>
 
