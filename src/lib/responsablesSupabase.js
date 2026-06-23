@@ -5,6 +5,7 @@ function responsableDesdePerfil(item) {
     id: item.id,
     nombre: item.nombre,
     correo: item.correo,
+    identificacion: item.identificacion || item.documento || item.numero_documento || "",
     rol: item.rol,
     estado: item.estado,
   }

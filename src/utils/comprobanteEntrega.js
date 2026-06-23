@@ -1,6 +1,6 @@
 import { valorSeguro } from "./inventario"
 
-export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
+export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
   const logoUrl = new URL(`${import.meta.env.BASE_URL}logo-msl-Azul.jpg`, window.location.origin).href
   const entregasComprobante = entregaSeleccionada.comprobanteId
     ? entregas.filter((item) => item.comprobanteId === entregaSeleccionada.comprobanteId)
@@ -27,6 +27,15 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
   const tituloCategoria = esComprobanteEpp ? "EPP" : "DOTACION"
   const codigoFormato = esComprobanteEpp ? "F-SST-33" : "F-GH-11"
   const fechaFirmaDigital = entregaSeleccionada.fecha || new Date().toISOString().slice(0, 10)
+  const nombreResponsableFirma = responsableFirma.nombre || entregaSeleccionada.responsable
+  const documentoResponsableFirma = responsableFirma.identificacion || responsableFirma.documento || ""
+  const correoResponsableFirma = responsableFirma.correo || responsableFirma.email || ""
+  const filasFirmaResponsable = `
+    <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(nombreResponsableFirma)}</span></div>
+    ${documentoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>${valorSeguro(documentoResponsableFirma)}</span></div>` : ""}
+    ${correoResponsableFirma ? `<div class="fila-firma"><span class="etiqueta-firma">Email</span><span>${valorSeguro(correoResponsableFirma)}</span></div>` : ""}
+    <div class="fila-firma"><span class="etiqueta-firma">Fecha</span><span>${valorSeguro(fechaFirmaDigital)} - TZ: GMT-5</span></div>
+  `
   const textoLegal = esComprobanteEpp
     ? `
             <p>Declaro que recibo los elementos de proteccion personal relacionados en este documento en buen estado y para uso durante mis actividades laborales.</p>
@@ -352,12 +361,7 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           </section>
 
           <section class="constancia-firma">
-            <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(entregaSeleccionada.responsable)}</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>No registrado</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">Email</span><span>No registrado</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">Fecha</span><span>${valorSeguro(fechaFirmaDigital)} - TZ: GMT-5</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">IP</span><span>No registrado</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">Token</span><span>No registrado</span></div>
+            ${filasFirmaResponsable}
           </section>
 
           <p class="nota-sistema">

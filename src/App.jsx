@@ -3244,9 +3244,21 @@ function App() {
   }
 
   function abrirComprobante(entregaSeleccionada) {
+    const nombreResponsable = normalizarTexto(entregaSeleccionada.responsable)
+    const responsablePerfil = responsablesEntrega.find(
+      (item) => normalizarTexto(item.nombre) === nombreResponsable
+    )
+    const responsableColaborador = colaboradores.find(
+      (item) => normalizarTexto(item.nombreCompleto) === nombreResponsable
+    )
     const comprobanteAbierto = abrirComprobanteEntrega({
       entregaSeleccionada,
       entregas,
+      responsableFirma: {
+        nombre: entregaSeleccionada.responsable,
+        correo: responsablePerfil?.correo,
+        identificacion: responsablePerfil?.identificacion || responsableColaborador?.identificacion,
+      },
     })
 
     if (!comprobanteAbierto) {
