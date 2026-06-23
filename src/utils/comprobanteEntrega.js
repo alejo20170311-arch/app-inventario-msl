@@ -352,8 +352,8 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas }) {
           </section>
 
           <section class="constancia-firma">
-            <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(entregaSeleccionada.colaborador)}</span></div>
-            <div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>${valorSeguro(entregaSeleccionada.identificacion)}</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Nombre</span><span>${valorSeguro(entregaSeleccionada.responsable)}</span></div>
+            <div class="fila-firma"><span class="etiqueta-firma">Número de Documento</span><span>No registrado</span></div>
             <div class="fila-firma"><span class="etiqueta-firma">Email</span><span>No registrado</span></div>
             <div class="fila-firma"><span class="etiqueta-firma">Fecha</span><span>${valorSeguro(fechaFirmaDigital)} - TZ: GMT-5</span></div>
             <div class="fila-firma"><span class="etiqueta-firma">IP</span><span>No registrado</span></div>
