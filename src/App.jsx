@@ -399,6 +399,7 @@ function App() {
       hasta: hoy,
       centroCostos: "Todos",
       categoria: "Todas",
+      productoId: "Todos",
       estado: "Todas",
     }
   })
@@ -848,6 +849,8 @@ function App() {
     const categoriaEntrega = item.categoria || productosPorId.get(String(item.productoId))?.categoria || ""
     const coincideCategoria = filtrosReporte.categoria === "Todas" ||
       categoriaEntrega === filtrosReporte.categoria
+    const coincideProducto = filtrosReporte.productoId === "Todos" ||
+      String(item.productoId) === String(filtrosReporte.productoId)
     const coincideTexto = coincideBusqueda(item, busquedaReportes, [
       "numeroComprobante",
       "colaborador",
@@ -862,7 +865,7 @@ function App() {
       "estado",
     ])
 
-    return coincideDesde && coincideHasta && coincideCentro && coincideCategoria && coincideTexto
+    return coincideDesde && coincideHasta && coincideCentro && coincideCategoria && coincideProducto && coincideTexto
   })
   const totalEntregadoReporte = entregasReporte.reduce(
     (total, item) => total + Number(item.cantidad || 0),
@@ -1563,6 +1566,7 @@ function App() {
     setFiltrosReporte({
       ...filtrosReporte,
       [campo]: valor,
+      ...(campo === "categoria" ? { productoId: "Todos" } : {}),
     })
   }
 
@@ -3879,6 +3883,10 @@ function App() {
               categoriasDisponibles={categoriasDisponibles}
               busquedaReportes={busquedaReportes}
               setBusquedaReportes={setBusquedaReportes}
+              productos={productos}
+              colaboradores={colaboradores}
+              entregasReporte={entregasReporte}
+              obtenerValorUnitarioProducto={obtenerValorUnitarioProducto}
               totalEntregadoReporte={totalEntregadoReporte}
               totalActivoReporte={totalActivoReporte}
               totalAnuladoReporte={totalAnuladoReporte}
