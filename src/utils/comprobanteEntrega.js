@@ -55,9 +55,10 @@ function mesTextoEntrega(fecha) {
 function nombreArchivoComprobante(entregaSeleccionada, tituloCategoria) {
   const titulo = limpiarNombreArchivo(`Acta de entrega ${tituloCategoria.toLowerCase()}`)
   const mes = limpiarNombreArchivo(mesTextoEntrega(entregaSeleccionada.fecha))
+  const colaborador = limpiarNombreArchivo(entregaSeleccionada.colaborador || "sin nombre")
   const documento = limpiarNombreArchivo(entregaSeleccionada.identificacion || "sin documento")
 
-  return `${titulo} - ${mes} - ${documento} - F1.pdf`
+  return `${titulo} - ${mes} - ${colaborador} - ${documento} - F1.pdf`
 }
 
 function construirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
