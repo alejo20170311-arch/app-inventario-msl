@@ -3486,12 +3486,16 @@ function App() {
     }
   }
 
-  function descargarComprobante(entregaSeleccionada) {
-    descargarComprobanteEntrega({
-      entregaSeleccionada,
-      entregas,
-      responsableFirma: datosResponsableComprobante(entregaSeleccionada),
-    })
+  async function descargarComprobante(entregaSeleccionada) {
+    try {
+      await descargarComprobanteEntrega({
+        entregaSeleccionada,
+        entregas,
+        responsableFirma: datosResponsableComprobante(entregaSeleccionada),
+      })
+    } catch (error) {
+      mostrarErrorSupabase(error, "descargar el comprobante")
+    }
   }
 
   function fechaAuditoriaLocal(valor) {

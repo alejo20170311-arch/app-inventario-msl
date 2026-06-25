@@ -57,7 +57,7 @@ function nombreArchivoComprobante(entregaSeleccionada, tituloCategoria) {
   const mes = limpiarNombreArchivo(mesTextoEntrega(entregaSeleccionada.fecha))
   const documento = limpiarNombreArchivo(entregaSeleccionada.identificacion || "sin documento")
 
-  return `${titulo} - ${mes} - ${documento} - F1.html`
+  return `${titulo} - ${mes} - ${documento} - F1.pdf`
 }
 
 function construirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
@@ -465,17 +465,75 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
   return true
 }
 
-export function descargarComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
+function esperarIframeListo(iframe) {
+  return new Promise((resolve) => {
+    const documento = iframe.contentDocument
+    const imagenes = Array.from(documento.images || [])
+    const fuentes = documento.fonts?.ready || Promise.resolve()
+    const cargaImagenes = imagenes.map((imagen) => {
+      if (imagen.complete) return Promise.resolve()
+
+      return new Promise((resolverImagen) => {
+        imagen.onload = resolverImagen
+        imagen.onerror = resolverImagen
+      })
+    })
+
+    Promise.all([fuentes, ...cargaImagenes]).then(() => {
+      window.setTimeout(resolve, 120)
+    })
+  })
+}
+
+export async function descargarComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
   const { contenido, nombreArchivo } = construirComprobanteEntrega({
     entregaSeleccionada,
     entregas,
     responsableFirma,
   })
-  const archivo = new Blob([contenido], { type: "text/html;charset=utf-8" })
-  const enlace = document.createElement("a")
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ])
+  const iframe = document.createElement("iframe")
 
-  enlace.href = URL.createObjectURL(archivo)
-  enlace.download = nombreArchivo
-  enlace.click()
-  URL.revokeObjectURL(enlace.href)
+  iframe.style.position = "fixed"
+  iframe.style.left = "-10000px"
+  iframe.style.top = "0"
+  iframe.style.width = "900px"
+  iframe.style.height = "1200px"
+  iframe.style.border = "0"
+  iframe.setAttribute("aria-hidden", "true")
+  document.body.appendChild(iframe)
+
+  try {
+    iframe.contentDocument.open()
+    iframe.contentDocument.write(contenido)
+    iframe.contentDocument.close()
+
+    await esperarIframeListo(iframe)
+
+    const pagina = iframe.contentDocument.querySelector(".pagina")
+    const canvas = await html2canvas(pagina, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      windowWidth: pagina.scrollWidth,
+      windowHeight: pagina.scrollHeight,
+    })
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "letter",
+      compress: true,
+    })
+    const anchoPagina = 216
+    const altoPagina = 279
+    const imagen = canvas.toDataURL("image/jpeg", 0.95)
+
+    pdf.addImage(imagen, "JPEG", 0, 0, anchoPagina, altoPagina)
+    pdf.save(nombreArchivo)
+  } finally {
+    iframe.remove()
+  }
 }
