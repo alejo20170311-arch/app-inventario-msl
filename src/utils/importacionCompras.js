@@ -143,6 +143,47 @@ export async function leerFilasCompra(archivo) {
   )
 }
 
+export async function leerFilasEntrega(archivo) {
+  const filas = await leerFilasArchivo(archivo)
+
+  if (filas.length < 2) {
+    return []
+  }
+
+  const encabezados = filas[0].map(normalizarEncabezado)
+
+  function valor(fila, opciones) {
+    const indice = opciones
+      .map(normalizarEncabezado)
+      .map((opcion) => encabezados.indexOf(opcion))
+      .find((posicion) => posicion >= 0)
+
+    return indice >= 0 ? String(fila[indice] || "").trim() : ""
+  }
+
+  return filas.slice(1).map((fila, indice) => {
+    const fecha = valor(fila, ["fecha", "fecha entrega", "fecha_entrega"])
+
+    return {
+      fila: indice + 2,
+      grupo: valor(fila, ["grupo", "grupo entrega", "grupo_entrega", "comprobante"]),
+      identificacion: valor(fila, ["identificacion", "identificación", "cedula", "cédula", "documento"]),
+      fecha: /^\d+(\.\d+)?$/.test(fecha) ? serialExcelAFecha(fecha) : fecha,
+      motivo: valor(fila, ["motivo"]),
+      responsable: valor(fila, ["responsable"]),
+      categoria: valor(fila, ["categoria", "categoría"]),
+      producto: valor(fila, ["producto", "nombre", "item"]),
+      tipo: valor(fila, ["tipo"]),
+      variante: valor(fila, ["variante", "talla", "talla variante"]),
+      unidad: valor(fila, ["unidad"]),
+      cantidad: valor(fila, ["cantidad", "cant"]),
+      observacion: valor(fila, ["observacion", "observación", "nota"]),
+    }
+  }).filter((fila) =>
+    Object.entries(fila).some(([clave, valor]) => clave !== "fila" && String(valor || "").trim())
+  )
+}
+
 export async function leerFilasProducto(archivo) {
   const filas = await leerFilasArchivo(archivo)
 

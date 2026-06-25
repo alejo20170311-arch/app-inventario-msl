@@ -68,7 +68,7 @@ import {
   planearDotacionColaboradores,
 } from "./utils/dotacion"
 import { fechaLocalISO, mesLocalISO } from "./utils/fechas"
-import { leerFilasCompra, leerFilasProducto } from "./utils/importacionCompras"
+import { leerFilasCompra, leerFilasEntrega, leerFilasProducto } from "./utils/importacionCompras"
 import {
   coincideBusqueda,
   coincideFiltroColaborador,
@@ -2319,6 +2319,212 @@ function App() {
     }
   }
 
+  async function importarEntregas(evento) {
+    if (!requierePermiso(puedeGestionarEntregas, "Tu rol no permite importar entregas.")) {
+      evento.target.value = ""
+      return
+    }
+
+    const archivo = evento.target.files?.[0]
+
+    if (!archivo) return
+
+    const nombreArchivo = archivo.name.toLowerCase()
+
+    if (!nombreArchivo.endsWith(".csv") && !nombreArchivo.endsWith(".xlsx")) {
+      mostrarMensaje("Selecciona un archivo CSV o XLSX de entregas.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    if (archivo.size > 5 * 1024 * 1024) {
+      mostrarMensaje("El archivo de entregas supera el máximo permitido de 5 MB.", "error")
+      evento.target.value = ""
+      return
+    }
+
+    if (accionGuardando || !accionPermitida("importar-entregas", 3000)) {
+      mostrarMensaje("Espera a que termine la acción en proceso antes de importar entregas.", "info")
+      evento.target.value = ""
+      return
+    }
+
+    setAccionGuardando("importar-entregas")
+
+    try {
+      const filas = await leerFilasEntrega(archivo)
+
+      if (filas.length === 0) {
+        throw new ErrorValidacion("El archivo no tiene líneas de entrega válidas.")
+      }
+
+      const colaboradoresIndice = new Map(
+        colaboradores.map((item) => [normalizarTexto(item.identificacion), item])
+      )
+      const productosIndice = new Map(
+        productos.map((producto) => [claveProductoCompra(producto), producto])
+      )
+      const errores = []
+      const grupos = new Map()
+
+      filas.forEach((fila) => {
+        const cantidad = Number(fila.cantidad)
+        const colaborador = colaboradoresIndice.get(normalizarTexto(fila.identificacion))
+        const producto = productosIndice.get(claveProductoCompra(fila))
+
+        if (!fila.identificacion) errores.push(`Fila ${fila.fila}: falta identificación.`)
+        if (!colaborador) errores.push(`Fila ${fila.fila}: el colaborador no existe.`)
+        if (colaborador?.estado === "Retirado") errores.push(`Fila ${fila.fila}: el colaborador está retirado.`)
+        if (!fechaIsoValida(fila.fecha)) errores.push(`Fila ${fila.fila}: fecha inválida.`)
+        if (!fila.motivo) errores.push(`Fila ${fila.fila}: falta motivo.`)
+        if (!fila.responsable) errores.push(`Fila ${fila.fila}: falta responsable.`)
+        if (!producto) errores.push(`Fila ${fila.fila}: el producto no coincide con un producto existente.`)
+        if (producto && producto.estado !== "Activo") errores.push(`Fila ${fila.fila}: el producto está inactivo.`)
+        if (!Number.isFinite(cantidad) || cantidad <= 0) errores.push(`Fila ${fila.fila}: cantidad inválida.`)
+        if (["Deterioro", "Cambio de talla", "Pérdida"].includes(fila.motivo) && textoLargoSeguro(fila.observacion).length < 8) {
+          errores.push(`Fila ${fila.fila}: para ${fila.motivo} debes escribir una observación clara.`)
+        }
+
+        const claveGrupo = fila.grupo
+          ? `grupo-${normalizarTexto(fila.grupo)}`
+          : `fila-${fila.fila}`
+
+        if (!grupos.has(claveGrupo)) {
+          grupos.set(claveGrupo, {
+            nombre: fila.grupo || `fila ${fila.fila}`,
+            entrega: {
+              colaboradorId: colaborador?.id || "",
+              fecha: fila.fecha,
+              motivo: textoSeguro(fila.motivo || "Ingreso", 80),
+              responsable: textoSeguro(fila.responsable, 160),
+              observacion: textoLargoSeguro(fila.observacion),
+            },
+            categorias: new Set(),
+            lineas: [],
+          })
+        }
+
+        const grupo = grupos.get(claveGrupo)
+
+        if (
+          grupo.entrega.colaboradorId !== (colaborador?.id || "") ||
+          grupo.entrega.fecha !== fila.fecha ||
+          normalizarTexto(grupo.entrega.motivo) !== normalizarTexto(fila.motivo) ||
+          normalizarTexto(grupo.entrega.responsable) !== normalizarTexto(fila.responsable) ||
+          normalizarTexto(grupo.entrega.observacion) !== normalizarTexto(fila.observacion)
+        ) {
+          errores.push(`Fila ${fila.fila}: los datos del grupo no coinciden con otras líneas del mismo comprobante.`)
+        }
+
+        if (producto) {
+          grupo.categorias.add(producto.categoria)
+          grupo.lineas.push({
+            producto,
+            cantidad,
+          })
+        }
+      })
+
+      grupos.forEach((grupo) => {
+        if (grupo.categorias.size > 1) {
+          errores.push(`Grupo ${grupo.nombre}: no mezcles EPP y dotación en el mismo comprobante.`)
+        }
+
+        if (grupo.lineas.length === 0) {
+          errores.push(`Grupo ${grupo.nombre}: no tiene productos válidos.`)
+        }
+      })
+
+      const stockDisponible = new Map(
+        productos.map((producto) => [String(producto.id), Number(producto.stockActual || 0)])
+      )
+
+      grupos.forEach((grupo) => {
+        const cantidadPorProducto = new Map()
+
+        grupo.lineas.forEach((linea) => {
+          const productoId = String(linea.producto.id)
+          cantidadPorProducto.set(
+            productoId,
+            Number(cantidadPorProducto.get(productoId) || 0) + Number(linea.cantidad || 0)
+          )
+        })
+
+        grupo.lineas = Array.from(cantidadPorProducto.entries()).map(([productoId, cantidad]) => ({
+          producto: productosPorId.get(productoId),
+          cantidad,
+        })).filter((linea) => linea.producto)
+
+        grupo.lineas.forEach((linea) => {
+          const productoId = String(linea.producto.id)
+          const disponible = Number(stockDisponible.get(productoId) || 0)
+
+          if (Number(linea.cantidad) > disponible) {
+            errores.push(`Grupo ${grupo.nombre}: no hay stock suficiente para ${linea.producto.nombre} - ${linea.producto.variante}. Disponible: ${disponible}.`)
+          } else {
+            stockDisponible.set(productoId, disponible - Number(linea.cantidad))
+          }
+        })
+      })
+
+      if (errores.length > 0) {
+        throw new ErrorValidacion(`Importación detenida. ${errores.slice(0, 8).join(" ")}`)
+      }
+
+      const entregasCreadas = []
+      const movimientosCreados = []
+      const productosActualizados = new Map()
+
+      for (const grupo of grupos.values()) {
+        try {
+          const resultado = await conTiempoMaximo(
+            registrarEntregaRpc({
+              entrega: grupo.entrega,
+              lineasEntregaDetalle: grupo.lineas,
+            }),
+            45000,
+            `La entrega del grupo ${grupo.nombre} está tardando más de lo normal. Revisa el historial antes de intentarlo otra vez.`
+          )
+          const creadoEnEntrega = new Date().toISOString()
+          const entregasGuardadas = resultado.entregas.map((item) => ({
+            ...item,
+            creadoEn: item.creadoEn || item.creado_en || creadoEnEntrega,
+          }))
+
+          entregasCreadas.push(...entregasGuardadas)
+          movimientosCreados.push(...resultado.movimientos)
+          entregasGuardadas.forEach((item) => {
+            productosActualizados.set(String(item.productoId), Number(item.stockResultante))
+          })
+        } catch (error) {
+          error.message = `Grupo ${grupo.nombre}: ${error.message}`
+          throw error
+        }
+      }
+
+      setProductos(
+        productos.map((producto) => {
+          const stockActual = productosActualizados.get(String(producto.id))
+
+          if (stockActual === undefined) return producto
+
+          return {
+            ...producto,
+            stockActual,
+          }
+        })
+      )
+      setEntregas([...entregasCreadas, ...entregas])
+      setMovimientos([...movimientosCreados, ...movimientos])
+      mostrarMensaje(`Importación lista. Comprobantes generados: ${grupos.size}. Líneas entregadas: ${entregasCreadas.length}.`, "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, "importar entregas")
+    } finally {
+      setAccionGuardando("")
+      evento.target.value = ""
+    }
+  }
+
   async function adjuntarFacturaCompra(compraItem, archivo) {
     if (!archivo || accionGuardando) return
     if (!requierePermiso(puedeGestionarProductos, "Tu rol no permite adjuntar facturas.")) return
@@ -3476,6 +3682,93 @@ function App() {
       },
       {
         nombre: "Datos creados",
+        columnas: [
+          { titulo: "categoria", campo: "categoria" },
+          { titulo: "producto", campo: "producto" },
+          { titulo: "tipo", campo: "tipo" },
+          { titulo: "variante", campo: "variante" },
+          { titulo: "unidad", campo: "unidad" },
+          { titulo: "stock actual", campo: "stockActual" },
+          { titulo: "estado", campo: "estado" },
+        ],
+        filas: filasReferencia,
+      },
+    ])
+  }
+
+  function exportarFormatoEntrega() {
+    const productoEjemplo = productos.find((producto) => producto.estado === "Activo") || productos[0]
+    const colaboradorEjemplo = colaboradores.find((item) => item.estado === "Activo") || colaboradores[0]
+    const responsableEjemplo = responsablesEntrega[0]?.nombre || perfil?.nombre || ""
+    const columnasEntrega = [
+      { titulo: "grupo", campo: "grupo" },
+      { titulo: "identificacion", campo: "identificacion" },
+      { titulo: "fecha", campo: "fecha" },
+      { titulo: "motivo", campo: "motivo" },
+      { titulo: "responsable", campo: "responsable" },
+      { titulo: "categoria", campo: "categoria" },
+      { titulo: "producto", campo: "producto" },
+      { titulo: "tipo", campo: "tipo" },
+      { titulo: "variante", campo: "variante" },
+      { titulo: "unidad", campo: "unidad" },
+      { titulo: "cantidad", campo: "cantidad" },
+      { titulo: "observacion", campo: "observacion" },
+    ]
+    const filasReferencia = productos
+      .filter((producto) => producto.estado === "Activo")
+      .slice()
+      .sort((a, b) =>
+        `${a.categoria} ${a.nombre} ${a.tipo} ${a.variante}`.localeCompare(`${b.categoria} ${b.nombre} ${b.tipo} ${b.variante}`)
+      )
+      .map((producto) => ({
+        categoria: producto.categoria,
+        producto: producto.nombre,
+        tipo: producto.tipo,
+        variante: producto.variante,
+        unidad: producto.unidad,
+        stockActual: producto.stockActual,
+        estado: producto.estado,
+      }))
+
+    descargarXlsx("formato-entregas-msl.xlsx", [
+      {
+        nombre: "Entregas",
+        columnas: columnasEntrega,
+        filas: [{
+          grupo: "ENT-001",
+          identificacion: colaboradorEjemplo?.identificacion || "",
+          fecha: fechaLocalISO(),
+          motivo: "Ingreso",
+          responsable: responsableEjemplo,
+          categoria: productoEjemplo?.categoria || "",
+          producto: productoEjemplo?.nombre || "",
+          tipo: productoEjemplo?.tipo || "",
+          variante: productoEjemplo?.variante || "",
+          unidad: productoEjemplo?.unidad || "",
+          cantidad: 1,
+          observacion: "Ejemplo: varias filas con el mismo grupo quedan en un mismo comprobante",
+        }],
+      },
+      {
+        nombre: "Instrucciones",
+        columnas: [
+          { titulo: "columna", campo: "columna" },
+          { titulo: "obligatoria", campo: "obligatoria" },
+          { titulo: "detalle", campo: "detalle" },
+        ],
+        filas: [
+          { columna: "grupo", obligatoria: "No", detalle: "Usa el mismo grupo para juntar varias líneas en un comprobante. Si queda vacío, cada fila crea su propio comprobante." },
+          { columna: "identificacion", obligatoria: "Sí", detalle: "Debe coincidir con un colaborador activo." },
+          { columna: "fecha", obligatoria: "Sí", detalle: "Formato AAAA-MM-DD." },
+          { columna: "motivo", obligatoria: "Sí", detalle: "Ejemplos: Ingreso, Reposición, Dotación periódica, Deterioro, Cambio de talla, Pérdida." },
+          { columna: "responsable", obligatoria: "Sí", detalle: "Nombre del responsable que firma o registra la entrega." },
+          { columna: "categoria, producto, tipo, variante, unidad", obligatoria: "Sí", detalle: "Deben coincidir con un producto activo existente." },
+          { columna: "cantidad", obligatoria: "Sí", detalle: "Número mayor a cero. La importación valida stock disponible." },
+          { columna: "observacion", obligatoria: "No", detalle: "Para Deterioro, Cambio de talla o Pérdida escribe una observación clara." },
+        ],
+      },
+      {
+        nombre: "Productos activos",
         columnas: [
           { titulo: "categoria", campo: "categoria" },
           { titulo: "producto", campo: "producto" },
@@ -5175,6 +5468,25 @@ function App() {
               <Download size={18} />
               Exportar entregas
             </button>
+            {puedeGestionarEntregas && (
+              <>
+                <button type="button" onClick={exportarFormatoEntrega} style={botonSecundario}>
+                  <FileText size={18} />
+                  Formato importación
+                </button>
+                <label style={accionGuardando === "importar-entregas" ? { ...botonSecundario, opacity: 0.55, cursor: "not-allowed" } : botonSecundario}>
+                  <Upload size={18} />
+                  {accionGuardando === "importar-entregas" ? "Importando..." : "Importar entregas"}
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={importarEntregas}
+                    disabled={accionGuardando === "importar-entregas"}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              </>
+            )}
           </div>
 
           {puedeGestionarEntregas ? (
