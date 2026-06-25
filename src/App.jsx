@@ -428,6 +428,11 @@ function App() {
     estado: "Activo",
   })
   const [auditoriaExpandidaId, setAuditoriaExpandidaId] = useState("")
+  const usuarioSesionId = sesion?.user?.id || ""
+  const perfilNombre = perfil?.nombre || ""
+  const perfilCorreo = perfil?.correo || ""
+  const perfilRol = perfil?.rol || ""
+  const perfilEstado = perfil?.estado || "Activo"
 
   const cargarPerfil = useCallback(async (usuarioId) => {
     let data
@@ -507,7 +512,7 @@ function App() {
   }, [cargarPerfil])
 
   useEffect(() => {
-    if (!sesion || !perfil) {
+    if (!usuarioSesionId || !perfilRol) {
       return undefined
     }
 
@@ -528,13 +533,18 @@ function App() {
         setCompras(datos.compras || [])
         setColaboradores(datos.colaboradores)
 
-        const responsables = await cargarResponsablesEntrega(perfil)
+        const responsables = await cargarResponsablesEntrega({
+          nombre: perfilNombre,
+          correo: perfilCorreo,
+          rol: perfilRol,
+          estado: perfilEstado,
+        })
 
         if (!activo) return
 
         setResponsablesEntrega(responsables)
 
-        if (perfil.rol === "Administrador") {
+        if (perfilRol === "Administrador") {
           const administracion = await cargarAdministracionUsuarios()
 
           setPerfiles(administracion.perfiles)
@@ -562,7 +572,7 @@ function App() {
     return () => {
       activo = false
     }
-  }, [sesion, perfil])
+  }, [usuarioSesionId, perfilNombre, perfilCorreo, perfilRol, perfilEstado])
 
   if (cargandoSesion || cargandoDatos) {
     return <PantallaCarga assetUrl={assetUrl} />
