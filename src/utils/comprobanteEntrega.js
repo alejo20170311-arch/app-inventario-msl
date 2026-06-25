@@ -1,5 +1,20 @@
 import { valorSeguro } from "./inventario"
 
+const mesesTexto = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
+
 function formatearFechaHoraComprobante(valor) {
   if (!valor) return ""
 
@@ -21,7 +36,31 @@ function formatearFechaHoraComprobante(valor) {
   }).format(fecha)
 }
 
-export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
+function limpiarNombreArchivo(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function mesTextoEntrega(fecha) {
+  const partes = String(fecha || "").match(/^(\d{4})-(\d{2})-\d{2}$/)
+  const indiceMes = partes ? Number(partes[2]) - 1 : new Date(fecha).getMonth()
+
+  return mesesTexto[indiceMes] || "sin mes"
+}
+
+function nombreArchivoComprobante(entregaSeleccionada, tituloCategoria) {
+  const titulo = limpiarNombreArchivo(`Acta de entrega ${tituloCategoria.toLowerCase()}`)
+  const mes = limpiarNombreArchivo(mesTextoEntrega(entregaSeleccionada.fecha))
+  const documento = limpiarNombreArchivo(entregaSeleccionada.identificacion || "sin documento")
+
+  return `${titulo} - ${mes} - ${documento} - F1.html`
+}
+
+function construirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
   const logoUrl = new URL(`${import.meta.env.BASE_URL}logo-msl-Azul.jpg`, window.location.origin).href
   const entregasComprobante = entregaSeleccionada.comprobanteId
     ? entregas.filter((item) => item.comprobanteId === entregaSeleccionada.comprobanteId)
@@ -82,9 +121,6 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
       <td>${valorSeguro(item.estado || "Activa")}</td>
     </tr>
   `).join("")
-  const ventana = window.open("", "_blank", "width=900,height=1100")
-
-  if (!ventana) return false
 
   const contenido = `
     <!doctype html>
@@ -403,6 +439,23 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
     </html>
   `
 
+  return {
+    contenido,
+    nombreArchivo: nombreArchivoComprobante(entregaSeleccionada, tituloCategoria),
+  }
+}
+
+export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
+  const ventana = window.open("", "_blank", "width=900,height=1100")
+
+  if (!ventana) return false
+
+  const { contenido } = construirComprobanteEntrega({
+    entregaSeleccionada,
+    entregas,
+    responsableFirma,
+  })
+
   ventana.document.open()
   ventana.document.write(contenido)
   ventana.document.close()
@@ -410,4 +463,19 @@ export function abrirComprobanteEntrega({ entregaSeleccionada, entregas, respons
     .getElementById("imprimir-comprobante")
     ?.addEventListener("click", () => ventana.print())
   return true
+}
+
+export function descargarComprobanteEntrega({ entregaSeleccionada, entregas, responsableFirma = {} }) {
+  const { contenido, nombreArchivo } = construirComprobanteEntrega({
+    entregaSeleccionada,
+    entregas,
+    responsableFirma,
+  })
+  const archivo = new Blob([contenido], { type: "text/html;charset=utf-8" })
+  const enlace = document.createElement("a")
+
+  enlace.href = URL.createObjectURL(archivo)
+  enlace.download = nombreArchivo
+  enlace.click()
+  URL.revokeObjectURL(enlace.href)
 }

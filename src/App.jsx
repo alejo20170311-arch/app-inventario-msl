@@ -62,7 +62,7 @@ import {
 import { cargarResponsablesEntrega } from "./lib/responsablesSupabase"
 import { supabase, supabaseStorageObjectUrl } from "./lib/supabase"
 import { abrirComprobanteCompra } from "./utils/comprobanteCompra"
-import { abrirComprobanteEntrega } from "./utils/comprobanteEntrega"
+import { abrirComprobanteEntrega, descargarComprobanteEntrega } from "./utils/comprobanteEntrega"
 import {
   crearAlertaDotacionEntrega,
   planearDotacionColaboradores,
@@ -3458,7 +3458,7 @@ function App() {
     }
   }
 
-  function abrirComprobante(entregaSeleccionada) {
+  function datosResponsableComprobante(entregaSeleccionada) {
     const nombreResponsable = normalizarTexto(entregaSeleccionada.responsable)
     const responsablePerfil = responsablesEntrega.find(
       (item) => normalizarTexto(item.nombre) === nombreResponsable
@@ -3466,19 +3466,32 @@ function App() {
     const responsableColaborador = colaboradores.find(
       (item) => normalizarTexto(item.nombreCompleto) === nombreResponsable
     )
+
+    return {
+      nombre: entregaSeleccionada.responsable,
+      correo: responsablePerfil?.correo,
+      identificacion: responsablePerfil?.identificacion || responsableColaborador?.identificacion,
+    }
+  }
+
+  function abrirComprobante(entregaSeleccionada) {
     const comprobanteAbierto = abrirComprobanteEntrega({
       entregaSeleccionada,
       entregas,
-      responsableFirma: {
-        nombre: entregaSeleccionada.responsable,
-        correo: responsablePerfil?.correo,
-        identificacion: responsablePerfil?.identificacion || responsableColaborador?.identificacion,
-      },
+      responsableFirma: datosResponsableComprobante(entregaSeleccionada),
     })
 
     if (!comprobanteAbierto) {
       mostrarMensaje("El navegador bloqueó la ventana del comprobante. Permite ventanas emergentes para esta app.")
     }
+  }
+
+  function descargarComprobante(entregaSeleccionada) {
+    descargarComprobanteEntrega({
+      entregaSeleccionada,
+      entregas,
+      responsableFirma: datosResponsableComprobante(entregaSeleccionada),
+    })
   }
 
   function fechaAuditoriaLocal(valor) {
@@ -5702,6 +5715,10 @@ function App() {
                           <button type="button" onClick={() => abrirComprobante(comprobante.primeraLinea)} style={botonEditar}>
                             Comprobante
                           </button>
+                          <button type="button" onClick={() => descargarComprobante(comprobante.primeraLinea)} style={botonSecundario}>
+                            <Download size={16} />
+                            Descargar
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -5773,6 +5790,10 @@ function App() {
                       <td style={celdaTabla}>
                         <button type="button" onClick={() => abrirComprobante(primeraLinea)} style={botonEditar}>
                           Comprobante
+                        </button>
+                        <button type="button" onClick={() => descargarComprobante(primeraLinea)} style={botonSecundario}>
+                          <Download size={16} />
+                          Descargar
                         </button>
                         {puedeGestionarEntregas && comprobante.estado === "Activa" ? (
                           <button disabled={estaGuardando(`anular-${primeraLinea.id}`)} onClick={() => anularEntrega(primeraLinea.id)} style={botonEliminar}>
