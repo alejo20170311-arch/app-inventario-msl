@@ -93,7 +93,7 @@ with movimientos_objetivo as (
   select
     m.producto_id,
     sum(m.cantidad)::integer as cantidad_a_reversar,
-    min(m.creado_por) as usuario_referencia
+    (min(m.creado_por::text))::uuid as usuario_referencia
   from public.movimientos m
   join public.productos p on p.id = m.producto_id
   where m.tipo_movimiento = 'Entrada'
