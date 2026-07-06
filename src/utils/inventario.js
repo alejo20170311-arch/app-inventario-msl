@@ -19,6 +19,10 @@ export function obtenerStockMinimo(productoCatalogo) {
 export function tallaValida(talla) {
   return talla && talla !== "N/A"
 }
+function tallaCoincide(tallaColaborador, varianteProducto) {
+  return tallaValida(tallaColaborador) &&
+    normalizarTexto(tallaColaborador) === normalizarTexto(varianteProducto)
+}
 export function productoIncluidoEnTipoDotacion(producto, tipoDotacion) {
   const partes = String(tipoDotacion || "")
     .split("+")
@@ -46,8 +50,10 @@ export function productoRequiereTalla(producto) {
     tipo === "bata" ||
     tipo === "uniforme" ||
     tipo === "camisa" ||
+    tipo === "camiseta" ||
     tipo === "pantalon" ||
     tipo === "jean" ||
+    nombre.includes("camiseta") ||
     nombre.includes("antifluido")
 }
 export function productoSugeridoParaColaborador(producto, colaborador) {
@@ -67,23 +73,27 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
   }
 
   if (tipo === "calzado") {
-    return tallaValida(colaborador.tallaBotas) && variante === colaborador.tallaBotas
+    return tallaCoincide(colaborador.tallaBotas, variante)
   }
 
   if (tipo === "bata") {
-    return tallaValida(colaborador.tallaBata) && variante === colaborador.tallaBata
+    return tallaCoincide(colaborador.tallaBata, variante)
   }
 
   if (tipo === "uniforme" || nombre.includes("antifluido")) {
-    return tallaValida(colaborador.tallaAntifluido) && variante === colaborador.tallaAntifluido
+    return tallaCoincide(colaborador.tallaAntifluido, variante)
   }
 
-  if (tipo === "camisa") {
-    return tallaValida(colaborador.tallaCamisa) && variante === colaborador.tallaCamisa
+  if (tipo === "camisa" || tipo === "camiseta" || nombre.includes("camiseta")) {
+    const tallaCamiseta = tallaValida(colaborador.tallaCamisa)
+      ? colaborador.tallaCamisa
+      : colaborador.tallaAntifluido
+
+    return tallaCoincide(tallaCamiseta, variante)
   }
 
   if (tipo === "pantalon" || tipo === "jean") {
-    return tallaValida(colaborador.tallaPantalon) && variante === colaborador.tallaPantalon
+    return tallaCoincide(colaborador.tallaPantalon, variante)
   }
 
   return !productoRequiereTalla(producto)
