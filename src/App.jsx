@@ -2073,9 +2073,8 @@ function App() {
         if (!Number.isFinite(stockActual) || stockActual < 0) errores.push(`Fila ${fila.fila}: stock inválido.`)
         if (!Number.isFinite(stockMinimo) || stockMinimo < 0) errores.push(`Fila ${fila.fila}: stock mínimo inválido.`)
         if (!["activo", "inactivo"].includes(normalizarTexto(estadoEntrada))) errores.push(`Fila ${fila.fila}: estado debe ser Activo o Inactivo.`)
-        if (stockActual > 0 && !esAdministrador) errores.push(`Fila ${fila.fila}: solo un administrador puede importar entradas de stock.`)
-
         return {
+          fila: fila.fila,
           categoria,
           nombre,
           tipo,
@@ -2099,11 +2098,28 @@ function App() {
       }
 
       const productosPorClave = new Map(productos.map((item) => [claveProductoInventario(item), item]))
+
+      productosUnicos.forEach((item) => {
+        const existente = productosPorClave.get(claveProductoInventario(item))
+        const diferenciaStock = existente
+          ? Number(item.stockActual) - Number(existente.stockActual || 0)
+          : Number(item.stockActual)
+
+        if (diferenciaStock !== 0 && !esAdministrador) {
+          errores.push(`Fila ${item.fila}: solo un administrador puede ajustar stock desde la importación.`)
+        }
+      })
+
+      if (errores.length > 0) {
+        throw new ErrorValidacion(`Importación detenida. ${errores.slice(0, 8).join(" ")}`)
+      }
+
       const catalogoPorClave = new Map(catalogoProductos.map((item) => [claveItemCatalogo(item), item]))
       const productosGuardados = new Map(productos.map((item) => [String(item.id), item]))
       const movimientosCreados = []
       let creados = 0
       let actualizados = 0
+      let ajustesStock = 0
 
       for (const item of productosUnicos) {
         const claveCatalogo = claveItemCatalogo(item)
@@ -2134,21 +2150,28 @@ function App() {
 
         catalogoPorClave.set(claveCatalogo, catalogoGuardado)
 
-        const existente = productosPorClave.get(claveProductoInventario(item))
-        const movimientoEntrada = item.stockActual > 0
+        const claveProducto = claveProductoInventario(item)
+        const existente = productosPorClave.get(claveProducto)
+        const diferenciaStock = existente
+          ? Number(item.stockActual) - Number(existente.stockActual || 0)
+          : Number(item.stockActual)
+        const tipoMovimientoStock = existente
+          ? diferenciaStock > 0 ? "Ajuste positivo" : "Ajuste negativo"
+          : "Entrada"
+        const movimientoStock = diferenciaStock !== 0
           ? {
               id: crypto.randomUUID(),
               productoId: existente?.id || "",
               producto: item.nombre,
               variante: item.variante,
               unidad: item.unidad,
-              tipoMovimiento: "Entrada",
-              cantidad: item.stockActual,
+              tipoMovimiento: tipoMovimientoStock,
+              cantidad: Math.abs(diferenciaStock),
               fecha: fechaLocalISO(),
-              observacion: item.observacion || item.motivoEntrada,
-              stockResultante: existente
-                ? Number(existente.stockActual || 0) + item.stockActual
-                : item.stockActual,
+              observacion: existente
+                ? `Ajuste por importación de productos: ${existente.stockActual} a ${item.stockActual}. ${item.observacion}`
+                : item.observacion || item.motivoEntrada,
+              stockResultante: item.stockActual,
             }
           : null
 
@@ -2172,12 +2195,15 @@ function App() {
         const { producto: productoGuardado, movimiento: movimientoCreado } = await guardarProductoMovimientoRpc({
           productoId: existente?.id || null,
           productoPayload,
-          movimiento: movimientoEntrada,
+          movimiento: movimientoStock,
         })
 
         productosGuardados.set(String(productoGuardado.id), productoGuardado)
         productosPorClave.set(claveProductoInventario(productoGuardado), productoGuardado)
-        if (movimientoCreado) movimientosCreados.push(movimientoCreado)
+        if (movimientoCreado) {
+          movimientosCreados.push(movimientoCreado)
+          ajustesStock += 1
+        }
         if (existente) actualizados += 1
         else creados += 1
       }
@@ -2193,7 +2219,7 @@ function App() {
         )
       )
       setMovimientos([...movimientosCreados, ...movimientos])
-      mostrarMensaje(`Importación lista. Productos nuevos: ${creados}. Actualizados: ${actualizados}.`, "exito")
+      mostrarMensaje(`Importación lista. Productos nuevos: ${creados}. Actualizados: ${actualizados}. Ajustes de stock: ${ajustesStock}.`, "exito")
     } catch (error) {
       mostrarErrorSupabase(error, "importar productos")
     } finally {
