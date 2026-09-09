@@ -1,5 +1,5 @@
 import { catalogoProductosBase } from "../data/inventario"
-import { obtenerStockMinimo } from "../utils/inventario"
+import { normalizarTalla, obtenerStockMinimo } from "../utils/inventario"
 
 import { obtenerSesionActiva, supabase } from "./supabase"
 
@@ -20,7 +20,7 @@ export function catalogoDesdeSupabase(item) {
     nombre: item.nombre,
     tipo: item.tipo,
     unidad: item.unidad,
-    variantes: Array.isArray(item.variantes) ? item.variantes : [],
+    variantes: Array.isArray(item.variantes) ? item.variantes.map(normalizarTalla) : [],
     stockMinimo: numero(item.stock_minimo),
   }
 }
@@ -35,7 +35,7 @@ export function catalogoParaSupabase(item) {
     nombre: item.nombre,
     tipo: item.tipo,
     unidad: item.unidad,
-    variantes: Array.isArray(item.variantes) ? item.variantes : [],
+    variantes: Array.isArray(item.variantes) ? item.variantes.map(normalizarTalla) : [],
     stock_minimo: stockMinimo,
   }
 }
@@ -46,7 +46,7 @@ export function productoDesdeSupabase(item) {
     nombre: item.nombre,
     categoria: item.categoria,
     tipo: item.tipo,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     stockActual: numero(item.stock_actual),
     stockMinimo: numero(item.stock_minimo),
@@ -61,7 +61,7 @@ export function productoParaSupabase(producto) {
   if ("nombre" in producto) payload.nombre = producto.nombre
   if ("categoria" in producto) payload.categoria = producto.categoria
   if ("tipo" in producto) payload.tipo = producto.tipo
-  if ("variante" in producto) payload.variante = producto.variante
+  if ("variante" in producto) payload.variante = normalizarTalla(producto.variante)
   if ("unidad" in producto) payload.unidad = producto.unidad
   if ("stockActual" in producto) payload.stock_actual = numero(producto.stockActual)
   if ("stockMinimo" in producto) payload.stock_minimo = numero(producto.stockMinimo)
@@ -84,9 +84,9 @@ export function colaboradorDesdeSupabase(item) {
     tipoDotacion: item.tipo_dotacion || "No aplica",
     sexo: item.sexo,
     estado: item.estado,
-    tallaAntifluido: item.talla_antifluido,
-    tallaBata: item.talla_bata,
-    tallaCamisa: item.talla_camisa,
+    tallaAntifluido: normalizarTalla(item.talla_antifluido),
+    tallaBata: normalizarTalla(item.talla_bata),
+    tallaCamisa: normalizarTalla(item.talla_camisa),
     tallaPantalon: item.talla_pantalon,
     tallaBotas: item.talla_botas,
   }
@@ -104,9 +104,9 @@ export function colaboradorParaSupabase(colaborador) {
     tipo_dotacion: colaborador.tipoDotacion || "No aplica",
     sexo: colaborador.sexo,
     estado: colaborador.estado,
-    talla_antifluido: colaborador.tallaAntifluido,
-    talla_bata: colaborador.tallaBata,
-    talla_camisa: colaborador.tallaCamisa,
+    talla_antifluido: normalizarTalla(colaborador.tallaAntifluido),
+    talla_bata: normalizarTalla(colaborador.tallaBata),
+    talla_camisa: normalizarTalla(colaborador.tallaCamisa),
     talla_pantalon: colaborador.tallaPantalon,
     talla_botas: colaborador.tallaBotas,
   }
@@ -118,7 +118,7 @@ export function movimientoDesdeSupabase(item) {
     comprobanteId: item.comprobante_id,
     productoId: item.producto_id,
     producto: item.producto,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     tipoMovimiento: item.tipo_movimiento,
     cantidad: numero(item.cantidad),
@@ -134,7 +134,7 @@ export function movimientoParaSupabase(item, usuarioId) {
     comprobante_id: item.comprobanteId || null,
     producto_id: item.productoId,
     producto: item.producto,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     tipo_movimiento: item.tipoMovimiento,
     cantidad: numero(item.cantidad),
@@ -168,7 +168,7 @@ export function entregaLineaParaSupabase(item) {
     producto: item.producto,
     categoria: item.categoria,
     tipo: item.tipo,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     cantidad: numero(item.cantidad),
     stock_resultante: numero(item.stockResultante),
@@ -195,7 +195,7 @@ export function entregaDesdeSupabase(item) {
     producto: item.producto,
     categoria: item.categoria,
     tipo: item.tipo,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     cantidad: numero(item.cantidad),
     fecha: comprobante.fecha || "",
@@ -216,7 +216,7 @@ export function lineaCompraDesdeSupabase(item) {
     producto: item.producto,
     categoria: item.categoria,
     tipo: item.tipo,
-    variante: item.variante,
+    variante: normalizarTalla(item.variante),
     unidad: item.unidad,
     cantidad: numero(item.cantidad),
     valorUnitario: numero(item.valor_unitario, 0),

@@ -78,10 +78,13 @@ import {
   esProductoStockBajo,
   esProductoStockCritico,
   limpiarObservacion,
+  normalizarTalla,
   normalizarTexto,
   obtenerStockMinimo,
+  productoPedidoDotacionSinTallaParaColaborador,
   productoPedidoDotacionParaColaborador,
   productoSugeridoParaColaborador,
+  tallaProductoParaColaborador,
 } from "./utils/inventario"
 import {
   correoValido,
@@ -960,9 +963,90 @@ function App() {
     .filter((item) => item.estado !== "Entregado ciclo")
     .map((item) => colaboradores.find((colaborador) => colaborador.id === item.colaboradorId))
     .filter(Boolean)
+  const productosDotacionActivos = productos
+    .filter((producto) => producto.categoria === "Dotación" && producto.estado === "Activo")
+  const productosDotacionPlaneacion = (() => {
+    const productosPorClave = new Map(
+      productosDotacionActivos.map((producto) => [claveProductoInventario(producto), producto])
+    )
+    const productosPlaneacion = [...productosDotacionActivos]
+    const catalogoPorClave = new Map()
+
+    ;[...catalogoProductos, ...catalogoProductosBase]
+      .filter((item) => item.categoria === "Dotación")
+      .forEach((item) => {
+        const clave = claveItemCatalogo(item)
+        const actual = catalogoPorClave.get(clave)
+        const variantes = Array.from(new Set([
+          ...(actual?.variantes || []),
+          ...(item.variantes || []),
+        ].map(normalizarTalla).filter(Boolean)))
+
+        catalogoPorClave.set(clave, {
+          ...actual,
+          ...item,
+          variantes,
+          stockMinimo: Number(item.stockMinimo ?? actual?.stockMinimo ?? obtenerStockMinimo(item)),
+        })
+      })
+
+    catalogoPorClave.forEach((itemCatalogo) => {
+      const tipos = opcionesSeparadas(itemCatalogo.tipo)
+      const variantes = itemCatalogo.variantes || []
+
+      tipos.forEach((tipo) => {
+        variantes.forEach((varianteCatalogo) => {
+          const variante = normalizarTalla(varianteCatalogo)
+          const productoPlaneado = {
+            id: `catalogo:${claveItemCatalogo(itemCatalogo)}:${normalizarTexto(tipo)}:${normalizarTexto(variante)}`,
+            categoria: itemCatalogo.categoria,
+            nombre: itemCatalogo.nombre,
+            tipo,
+            variante,
+            unidad: itemCatalogo.unidad,
+            stockActual: 0,
+            stockMinimo: Number(itemCatalogo.stockMinimo ?? obtenerStockMinimo(itemCatalogo)),
+            ubicacion: "Sin crear",
+            estado: "Activo",
+          }
+          const claveProducto = claveProductoInventario(productoPlaneado)
+
+          if (!productosPorClave.has(claveProducto)) {
+            productosPorClave.set(claveProducto, productoPlaneado)
+            productosPlaneacion.push(productoPlaneado)
+          }
+        })
+      })
+    })
+
+    colaboradoresPendientesDotacion.forEach((colaborador) => {
+      productosPlaneacion
+        .filter((producto) =>
+          productoPedidoDotacionSinTallaParaColaborador(producto, colaborador)
+        )
+        .forEach((producto) => {
+          const tallaSugerida = tallaProductoParaColaborador(producto, colaborador)
+          const variante = tallaSugerida || normalizarTalla(producto.variante)
+          const productoPlaneado = {
+            ...producto,
+            id: `planeado:${producto.id}:${normalizarTexto(variante)}`,
+            variante,
+            stockActual: 0,
+            stockMinimo: obtenerStockMinimo(producto),
+          }
+          const clave = claveProductoInventario(productoPlaneado)
+
+          if (!productosPorClave.has(clave)) {
+            productosPorClave.set(clave, productoPlaneado)
+            productosPlaneacion.push(productoPlaneado)
+          }
+        })
+    })
+
+    return productosPlaneacion
+  })()
   const demandaDotacionPorProducto = new Map(
-    productos
-      .filter((producto) => producto.categoria === "Dotación" && producto.estado === "Activo")
+    productosDotacionPlaneacion
       .map((producto) => [
         String(producto.id),
         colaboradoresPendientesDotacion.filter((colaborador) =>
@@ -974,7 +1058,7 @@ function App() {
     normalizarTexto(item.categoria),
     normalizarTexto(item.producto || item.nombre),
     normalizarTexto(item.tipo),
-    normalizarTexto(item.variante),
+    normalizarTexto(normalizarTalla(item.variante)),
     normalizarTexto(item.unidad),
   ].join("__")
   const valorUltimaCompraPorProducto = new Map()
@@ -1005,10 +1089,8 @@ function App() {
     0
   const demandaBrutaDotacionPorCentro = Object.values(
     colaboradoresPendientesDotacion.reduce((acumulado, colaborador) => {
-      productos
+      productosDotacionPlaneacion
         .filter((producto) =>
-          producto.categoria === "Dotación" &&
-          producto.estado === "Activo" &&
           productoPedidoDotacionParaColaborador(producto, colaborador)
         )
         .forEach((producto) => {
@@ -1039,7 +1121,8 @@ function App() {
       return acumulado
     }, {})
   )
-  const productosPedidoAutomatico = productos
+  const productosPedidoBase = categoriaPedido === "Dotación" ? productosDotacionPlaneacion : productos
+  const productosPedidoAutomatico = productosPedidoBase
     .filter((producto) => {
       if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
 
@@ -1154,7 +1237,7 @@ function App() {
   const motivosEntrada = ["Compra", "Inventario inicial", "Reposición", "Devolución", "Ajuste inicial", "Otro"]
   const tiposMovimiento = ["Entrada", "Devolución", "Ajuste positivo", "Ajuste negativo"]
   const motivosEntrega = ["Ingreso", "Reposición", "Deterioro", "Dotación periódica", "Cambio de talla", "Pérdida"]
-  const tallasRopa = ["N/A", "XS", "S", "M", "L", "XL", "XXL"]
+  const tallasRopa = ["N/A", "XS", "S", "M", "L", "XL", "2XL", "3XL"]
   const tallasPantalon = ["N/A", "6", "8", "10", "12", "14", "16", "28", "30", "32", "34", "36", "38", "40"]
   const tallasBotas = ["35", "36", "37", "38", "39", "40", "41", "42", "43"]
   const opcionesColaboradoresEntrega = colaboradores
@@ -1613,7 +1696,7 @@ function App() {
 
     setFormulario({
       ...formulario,
-      [campo]: valor,
+      [campo]: campo === "variante" ? normalizarTalla(valor) : valor,
     })
   }
 
@@ -1660,7 +1743,7 @@ function App() {
 
     const variantes = itemCatalogo.variantes
       .split(",")
-      .map((variante) => textoSeguro(variante, 60))
+      .map((variante) => textoSeguro(normalizarTalla(variante), 60))
       .filter(Boolean)
 
     if (variantes.length === 0) {
@@ -1997,7 +2080,7 @@ function App() {
       item.categoria,
       item.nombre || item.producto,
       item.tipo,
-      item.variante,
+      normalizarTalla(item.variante),
       item.unidad,
     ].map(normalizarTexto).join("__")
   }
@@ -2007,7 +2090,7 @@ function App() {
       item.categoria,
       item.producto || item.nombre,
       item.tipo,
-      item.variante,
+      normalizarTalla(item.variante),
       item.unidad,
     ].map(normalizarTexto).join("__")
   }
@@ -2057,7 +2140,7 @@ function App() {
         const categoria = categoriaNormalizada === "epp" ? "EPP" : "Dotación"
         const nombre = textoSeguro(fila.nombre, 160)
         const tipo = textoSeguro(fila.tipo, 160)
-        const variante = textoSeguro(fila.variante || "Única", 120)
+        const variante = textoSeguro(normalizarTalla(fila.variante || "Única"), 120)
         const unidad = textoSeguro(fila.unidad || "Unidad", 40)
         const ubicacion = textoSeguro(fila.ubicacion || "Bodega GH", 160)
         const estadoEntrada = textoSeguro(fila.estado || "Activo", 20)
@@ -2927,7 +3010,7 @@ function App() {
       nombre: textoSeguro(formulario.nombre, 160),
       categoria: formulario.categoria,
       tipo: textoSeguro(formulario.tipo, 160),
-      variante: textoSeguro(formulario.variante, 120),
+      variante: textoSeguro(normalizarTalla(formulario.variante), 120),
       unidad: formulario.unidad,
       stockMinimo: stockMinimoProducto,
       ubicacion: textoSeguro(formulario.ubicacion, 160),
@@ -3191,9 +3274,9 @@ function App() {
       nombreCentroCostos: textoSeguro(colaborador.nombreCentroCostos, 160),
       tipoDotacion: textoSeguro(colaborador.tipoDotacion || "No aplica", 500),
       sexo: textoSeguro(colaborador.sexo, 40),
-      tallaAntifluido: textoSeguro(colaborador.tallaAntifluido, 20),
-      tallaBata: textoSeguro(colaborador.tallaBata, 20),
-      tallaCamisa: textoSeguro(colaborador.tallaCamisa, 20),
+      tallaAntifluido: textoSeguro(normalizarTalla(colaborador.tallaAntifluido), 20),
+      tallaBata: textoSeguro(normalizarTalla(colaborador.tallaBata), 20),
+      tallaCamisa: textoSeguro(normalizarTalla(colaborador.tallaCamisa), 20),
       tallaPantalon: textoSeguro(colaborador.tallaPantalon, 20),
       tallaBotas: textoSeguro(colaborador.tallaBotas, 20),
     }
@@ -4133,9 +4216,9 @@ function App() {
             tipoDotacion: textoSeguro(obtenerValor(fila, ["Tipo dotación", "Tipo dotacion"]) || "No aplica", 500),
             sexo: textoSeguro(obtenerValor(fila, ["Sexo"]) || "Femenino", 40),
             estado: textoSeguro(obtenerValor(fila, ["Estado"]) || "Activo", 20),
-            tallaAntifluido: textoSeguro(obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A", 20),
-            tallaBata: textoSeguro(obtenerValor(fila, ["Talla de bata", "Talla bata"]) || "N/A", 20),
-            tallaCamisa: textoSeguro(obtenerValor(fila, ["Talla camisa", "Talla de camisa"]) || "N/A", 20),
+            tallaAntifluido: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A"), 20),
+            tallaBata: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla de bata", "Talla bata"]) || "N/A"), 20),
+            tallaCamisa: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla camisa", "Talla de camisa"]) || "N/A"), 20),
             tallaPantalon: textoSeguro(obtenerValor(fila, ["Talla pantalón", "Talla pantalon", "Talla de pantalón", "Talla de pantalon"]) || "N/A", 20),
             tallaBotas: textoSeguro(obtenerValor(fila, ["Talla de botas", "Talla botas", "Talla bota"]) || "", 20),
           }
@@ -5377,7 +5460,7 @@ function App() {
             <Campo texto="Talla antifluido">
               <ListaBuscable
                 value={colaborador.tallaAntifluido}
-                onChange={(valor) => actualizarColaborador("tallaAntifluido", valor || "N/A")}
+                onChange={(valor) => actualizarColaborador("tallaAntifluido", normalizarTalla(valor || "N/A"))}
                 options={tallasRopa}
                 style={campoFormulario}
               />
@@ -5386,7 +5469,7 @@ function App() {
             <Campo texto="Talla bata">
               <ListaBuscable
                 value={colaborador.tallaBata}
-                onChange={(valor) => actualizarColaborador("tallaBata", valor || "N/A")}
+                onChange={(valor) => actualizarColaborador("tallaBata", normalizarTalla(valor || "N/A"))}
                 options={tallasRopa}
                 style={campoFormulario}
               />
@@ -5395,7 +5478,7 @@ function App() {
             <Campo texto="Talla camisa">
               <ListaBuscable
                 value={colaborador.tallaCamisa}
-                onChange={(valor) => actualizarColaborador("tallaCamisa", valor || "N/A")}
+                onChange={(valor) => actualizarColaborador("tallaCamisa", normalizarTalla(valor || "N/A"))}
                 options={tallasRopa}
                 style={campoFormulario}
               />

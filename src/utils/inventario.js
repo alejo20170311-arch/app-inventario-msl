@@ -17,11 +17,52 @@ export function obtenerStockMinimo(productoCatalogo) {
   return 2
 }
 export function tallaValida(talla) {
-  return talla && talla !== "N/A"
+  return Boolean(normalizarTalla(talla)) && normalizarTalla(talla) !== "N/A"
 }
+
+export function normalizarTalla(talla) {
+  const valor = String(talla || "").trim()
+
+  if (!valor) return ""
+
+  const compacto = valor
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]/g, "")
+
+  if (["NA", "N/A", "NOAPLICA"].includes(compacto)) return "N/A"
+  if (["UNICA", "UNIC"].includes(compacto)) return "Única"
+  if (["XS", "S", "M", "L", "XL"].includes(compacto)) return compacto
+
+  const numeroXL = compacto.match(/^([2-9]\d*)X?L$/)
+  if (numeroXL) return `${numeroXL[1]}XL`
+
+  if (/^X{2,}L$/.test(compacto)) {
+    return `${compacto.length - 1}XL`
+  }
+
+  return valor
+}
+
 function tallaCoincide(tallaColaborador, varianteProducto) {
   return tallaValida(tallaColaborador) &&
-    normalizarTexto(tallaColaborador) === normalizarTexto(varianteProducto)
+    normalizarTexto(normalizarTalla(tallaColaborador)) === normalizarTexto(normalizarTalla(varianteProducto))
+}
+
+export function productoAplicaSexoColaborador(producto, colaborador) {
+  const nombre = String(producto.nombre || "").toLowerCase()
+  const sexo = String(colaborador?.sexo || "").toLowerCase()
+
+  if (nombre.includes("dama") || nombre.includes("mujer")) {
+    return sexo === "femenino"
+  }
+
+  if (nombre.includes("hombre")) {
+    return sexo === "masculino"
+  }
+
+  return true
 }
 export function productoIncluidoEnTipoDotacion(producto, tipoDotacion) {
   const partes = String(tipoDotacion || "")
@@ -62,15 +103,8 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
   const nombre = producto.nombre.toLowerCase()
   const tipo = producto.tipo.toLowerCase()
   const variante = String(producto.variante)
-  const sexo = String(colaborador.sexo || "").toLowerCase()
 
-  if (nombre.includes("dama") || nombre.includes("mujer")) {
-    if (sexo !== "femenino") return false
-  }
-
-  if (nombre.includes("hombre")) {
-    if (sexo !== "masculino") return false
-  }
+  if (!productoAplicaSexoColaborador(producto, colaborador)) return false
 
   if (tipo === "calzado") {
     return tallaCoincide(colaborador.tallaBotas, variante)
@@ -98,6 +132,34 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
 
   return !productoRequiereTalla(producto)
 }
+
+export function tallaProductoParaColaborador(producto, colaborador) {
+  if (!colaborador) return ""
+
+  const nombre = String(producto.nombre || "").toLowerCase()
+  const tipo = String(producto.tipo || "").toLowerCase()
+
+  if (tipo === "calzado") return normalizarTalla(colaborador.tallaBotas)
+  if (tipo === "bata") return normalizarTalla(colaborador.tallaBata)
+  if (tipo === "uniforme" || nombre.includes("antifluido")) return normalizarTalla(colaborador.tallaAntifluido)
+
+  if (tipo === "camisa" || tipo === "camiseta" || nombre.includes("camiseta")) {
+    return normalizarTalla(tallaValida(colaborador.tallaCamisa)
+      ? colaborador.tallaCamisa
+      : colaborador.tallaAntifluido)
+  }
+
+  if (tipo === "pantalon" || tipo === "jean") return normalizarTalla(colaborador.tallaPantalon)
+
+  return productoRequiereTalla(producto) ? "" : normalizarTalla(producto.variante || "Única")
+}
+
+export function productoPedidoDotacionSinTallaParaColaborador(producto, colaborador) {
+  return productoIncluidoEnTipoDotacion(producto, colaborador?.tipoDotacion) &&
+    productoAplicaSexoColaborador(producto, colaborador) &&
+    (!productoRequiereTalla(producto) || tallaValida(tallaProductoParaColaborador(producto, colaborador)))
+}
+
 export function productoPedidoDotacionParaColaborador(producto, colaborador) {
   return productoIncluidoEnTipoDotacion(producto, colaborador?.tipoDotacion) &&
     productoSugeridoParaColaborador(producto, colaborador)
