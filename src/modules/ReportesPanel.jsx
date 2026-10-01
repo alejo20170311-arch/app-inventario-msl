@@ -1,6 +1,7 @@
 import { Boxes, Download, RefreshCw, Target, TrendingUp, Wallet } from "lucide-react"
 
 import { Campo } from "../components/Campo"
+import { BuscadorFiltro } from "../components/BuscadorFiltro"
 import { ListaBuscable } from "../components/ListaBuscable"
 import {
   accionesModulo,
@@ -416,7 +417,7 @@ export function ReportesPanel({
             <ListaBuscable value={filtrosReporte.productoId} onChange={(valor) => actualizarFiltroReporte("productoId", valor || "Todos")} options={opcionesProductosReporte} placeholder="Todos" style={campoFormulario} />
           </Campo>
           <Campo texto="Buscar">
-            <input value={busquedaReportes} onChange={(e) => setBusquedaReportes(e.target.value)} placeholder="Colaborador, comprobante o responsable" style={campoFormulario} />
+            <BuscadorFiltro value={busquedaReportes} onChange={setBusquedaReportes} placeholder="Colaborador, comprobante o responsable" style={campoFormulario} />
           </Campo>
         </form>
       </section>

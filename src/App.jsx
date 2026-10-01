@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useState } from "react"
 import { lazy, Suspense } from "react"
-import { useRef } from "react"
+import { useMemo, useRef } from "react"
 import {
   ArrowLeftRight,
   BarChart3,
@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { Campo } from "./components/Campo"
+import { BuscadorFiltro } from "./components/BuscadorFiltro"
 import { LayoutInventario } from "./components/LayoutInventario"
 import { ListaBuscable } from "./components/ListaBuscable"
 import { PantallaCarga, PantallaLogin } from "./components/PantallasSesion"
@@ -577,6 +578,295 @@ function App() {
     }
   }, [usuarioSesionId, perfilNombre, perfilCorreo, perfilRol, perfilEstado])
 
+  const fechaPlaneacion = fechaLocalISO()
+  const {
+    planeacionDotacion,
+    productosPedidoAutomatico,
+    detallePedidoDotacionPorCentro,
+    obtenerValorUnitarioProducto,
+  } = useMemo(() => {
+    const planeacionDotacion = planearDotacionColaboradores({
+      colaboradores,
+      entregas,
+      fechaBaseISO: fechaPlaneacion,
+    })
+    const colaboradoresPendientesDotacion = planeacionDotacion
+      .filter((item) => item.estado !== "Entregado ciclo")
+      .map((item) => colaboradores.find((colaborador) => colaborador.id === item.colaboradorId))
+      .filter(Boolean)
+    const productosDotacionActivos = productos
+      .filter((producto) => producto.categoria === "Dotación" && producto.estado === "Activo")
+    const productosDotacionPlaneacion = (() => {
+      const productosPorClave = new Map(
+        productosDotacionActivos.map((producto) => [claveProductoInventario(producto), producto])
+      )
+      const productosPlaneacion = [...productosDotacionActivos]
+      const catalogoPorClave = new Map()
+
+      ;[...catalogoProductos, ...catalogoProductosBase]
+        .filter((item) => item.categoria === "Dotación")
+        .forEach((item) => {
+          const clave = claveItemCatalogo(item)
+          const actual = catalogoPorClave.get(clave)
+          const variantes = Array.from(new Set([
+            ...(actual?.variantes || []),
+            ...(item.variantes || []),
+          ].map(normalizarTalla).filter(Boolean)))
+
+          catalogoPorClave.set(clave, {
+            ...actual,
+            ...item,
+            variantes,
+            stockMinimo: Number(item.stockMinimo ?? actual?.stockMinimo ?? obtenerStockMinimo(item)),
+          })
+        })
+
+      catalogoPorClave.forEach((itemCatalogo) => {
+        const tipos = opcionesSeparadas(itemCatalogo.tipo)
+        const variantes = itemCatalogo.variantes || []
+
+        tipos.forEach((tipo) => {
+          variantes.forEach((varianteCatalogo) => {
+            const variante = normalizarTalla(varianteCatalogo)
+            const productoPlaneado = {
+              id: `catalogo:${claveItemCatalogo(itemCatalogo)}:${normalizarTexto(tipo)}:${normalizarTexto(variante)}`,
+              categoria: itemCatalogo.categoria,
+              nombre: itemCatalogo.nombre,
+              tipo,
+              variante,
+              unidad: itemCatalogo.unidad,
+              stockActual: 0,
+              stockMinimo: Number(itemCatalogo.stockMinimo ?? obtenerStockMinimo(itemCatalogo)),
+              ubicacion: "Sin crear",
+              estado: "Activo",
+            }
+            const claveProducto = claveProductoInventario(productoPlaneado)
+
+            if (!productosPorClave.has(claveProducto)) {
+              productosPorClave.set(claveProducto, productoPlaneado)
+              productosPlaneacion.push(productoPlaneado)
+            }
+          })
+        })
+      })
+
+      colaboradoresPendientesDotacion.forEach((colaborador) => {
+        productosPlaneacion
+          .filter((producto) =>
+            productoPedidoDotacionSinTallaParaColaborador(producto, colaborador)
+          )
+          .forEach((producto) => {
+            const tallaSugerida = tallaProductoParaColaborador(producto, colaborador)
+            const variante = tallaSugerida || normalizarTalla(producto.variante)
+            const productoPlaneado = {
+              ...producto,
+              id: `planeado:${producto.id}:${normalizarTexto(variante)}`,
+              variante,
+              stockActual: 0,
+              stockMinimo: obtenerStockMinimo(producto),
+            }
+            const clave = claveProductoInventario(productoPlaneado)
+
+            if (!productosPorClave.has(clave)) {
+              productosPorClave.set(clave, productoPlaneado)
+              productosPlaneacion.push(productoPlaneado)
+            }
+          })
+      })
+
+      return productosPlaneacion
+    })()
+    const demandaDotacionPorProducto = new Map(
+      productosDotacionPlaneacion
+        .map((producto) => [
+          String(producto.id),
+          colaboradoresPendientesDotacion.filter((colaborador) =>
+            productoPedidoDotacionParaColaborador(producto, colaborador)
+          ).length,
+        ])
+    )
+    const claveProductoPrecio = (item) => [
+      normalizarTexto(item.categoria),
+      normalizarTexto(item.producto || item.nombre),
+      normalizarTexto(item.tipo),
+      normalizarTexto(normalizarTalla(item.variante)),
+      normalizarTexto(item.unidad),
+    ].join("__")
+    const valorUltimaCompraPorProducto = new Map()
+    compras
+      .slice()
+      .sort((a, b) =>
+        String(b.fecha || "").localeCompare(String(a.fecha || "")) ||
+        String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""))
+      )
+      .forEach((compraItem) => {
+        ;(compraItem.lineas || []).forEach((linea) => {
+          const valorUnitario = Number(linea.valorUnitario || 0)
+          const claves = [
+            linea.productoId ? `id:${linea.productoId}` : "",
+            `datos:${claveProductoPrecio(linea)}`,
+          ].filter(Boolean)
+
+          claves.forEach((clave) => {
+            if (!valorUltimaCompraPorProducto.has(clave)) {
+              valorUltimaCompraPorProducto.set(clave, valorUnitario)
+            }
+          })
+        })
+      })
+    const obtenerValorUnitarioProducto = (producto) =>
+      valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
+      valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
+      0
+    const demandaBrutaDotacionPorCentro = Object.values(
+      colaboradoresPendientesDotacion.reduce((acumulado, colaborador) => {
+        productosDotacionPlaneacion
+          .filter((producto) =>
+            productoPedidoDotacionParaColaborador(producto, colaborador)
+          )
+          .forEach((producto) => {
+            const clave = [
+              colaborador.centroCostos || "-",
+              colaborador.nombreCentroCostos || "Sin centro",
+              producto.id,
+            ].join("__")
+            const valorUnitario = obtenerValorUnitarioProducto(producto)
+
+            acumulado[clave] = acumulado[clave] || {
+              centroCostos: colaborador.centroCostos || "-",
+              nombreCentroCostos: colaborador.nombreCentroCostos || "Sin centro",
+              producto: producto.nombre,
+              categoria: producto.categoria,
+              tipo: producto.tipo,
+              variante: producto.variante,
+              unidad: producto.unidad,
+              productoId: producto.id,
+              demandaBruta: 0,
+              cantidad: 0,
+              valorUnitario,
+              valorTotal: 0,
+            }
+            acumulado[clave].demandaBruta += 1
+          })
+
+        return acumulado
+      }, {})
+    )
+    const productosPedidoBase = categoriaPedido === "Dotación" ? productosDotacionPlaneacion : productos
+    const productosPedidoAutomatico = productosPedidoBase
+      .filter((producto) => {
+        if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
+
+        if (categoriaPedido === "Dotación") {
+          const demandaProxima = demandaDotacionPorProducto.get(String(producto.id)) || 0
+          const cantidadSugerida = Math.max(
+            0,
+            demandaProxima + Number(producto.stockMinimo) - Number(producto.stockActual)
+          )
+
+          return demandaProxima > 0 && cantidadSugerida > 0
+        }
+
+        return esProductoStockBajo(producto)
+      })
+      .map((producto) => ({
+        ...producto,
+        demandaProxima: categoriaPedido === "Dotación"
+          ? demandaDotacionPorProducto.get(String(producto.id)) || 0
+          : 0,
+        cantidadSugerida: categoriaPedido === "Dotación"
+          ? Math.max(
+            0,
+            (demandaDotacionPorProducto.get(String(producto.id)) || 0) +
+              Number(producto.stockMinimo) -
+              Number(producto.stockActual)
+          )
+          : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
+      }))
+      .map((producto) => {
+        const valorUnitario = obtenerValorUnitarioProducto(producto)
+
+        return {
+          ...producto,
+          valorUnitario,
+          valorTotal: Number(valorUnitario) * Number(producto.cantidadSugerida || 0),
+        }
+      })
+      .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
+    const pedidoSugeridoPorProducto = new Map(
+      productosPedidoAutomatico.map((producto) => [String(producto.id), Number(producto.cantidadSugerida || 0)])
+    )
+    const detallePedidoDotacionPorCentro = Object.values(
+      demandaBrutaDotacionPorCentro.reduce((grupos, item) => {
+        const productoId = String(item.productoId)
+
+        grupos[productoId] = grupos[productoId] || []
+        grupos[productoId].push(item)
+
+        return grupos
+      }, {})
+    )
+      .flatMap((itemsProducto) => {
+        const productoId = String(itemsProducto[0]?.productoId || "")
+        const pedidoSugerido = pedidoSugeridoPorProducto.get(productoId) || 0
+        const demandaTotal = itemsProducto.reduce((total, item) => total + Number(item.demandaBruta || 0), 0)
+
+        if (pedidoSugerido <= 0 || demandaTotal <= 0) return []
+
+        const repartidos = itemsProducto.map((item) => {
+          const exacto = (Number(item.demandaBruta || 0) / demandaTotal) * pedidoSugerido
+          const cantidadBase = Math.floor(exacto)
+
+          return {
+            ...item,
+            cantidad: cantidadBase,
+            residuo: exacto - cantidadBase,
+          }
+        })
+        let unidadesRestantes = pedidoSugerido - repartidos.reduce((total, item) => total + item.cantidad, 0)
+
+        repartidos
+          .slice()
+          .sort((a, b) =>
+            b.residuo - a.residuo ||
+            Number(b.demandaBruta || 0) - Number(a.demandaBruta || 0) ||
+            String(a.centroCostos).localeCompare(String(b.centroCostos))
+          )
+          .forEach((item) => {
+            if (unidadesRestantes <= 0) return
+
+            item.cantidad += 1
+            unidadesRestantes -= 1
+          })
+
+        return repartidos
+          .filter((item) => item.cantidad > 0)
+          .map((item) => ({
+            centroCostos: item.centroCostos,
+            nombreCentroCostos: item.nombreCentroCostos,
+            producto: item.producto,
+            categoria: item.categoria,
+            tipo: item.tipo,
+            variante: item.variante,
+            unidad: item.unidad,
+            cantidad: item.cantidad,
+            valorUnitario: item.valorUnitario,
+            valorTotal: Number(item.valorUnitario || 0) * Number(item.cantidad || 0),
+          }))
+      })
+      .sort((a, b) =>
+        String(a.centroCostos).localeCompare(String(b.centroCostos)) ||
+        a.producto.localeCompare(b.producto) ||
+        String(a.variante).localeCompare(String(b.variante))
+      )
+    return {
+      planeacionDotacion,
+      productosPedidoAutomatico,
+      detallePedidoDotacionPorCentro,
+      obtenerValorUnitarioProducto,
+    }
+  }, [colaboradores, entregas, productos, catalogoProductos, compras, categoriaPedido, fechaPlaneacion])
+
   if (cargandoSesion || cargandoDatos) {
     return <PantallaCarga assetUrl={assetUrl} />
   }
@@ -954,280 +1244,6 @@ function App() {
 
     return producto.categoria === filtrosReporte.categoria
   })
-  const planeacionDotacion = planearDotacionColaboradores({
-    colaboradores,
-    entregas,
-    fechaBaseISO: fechaLocalISO(),
-  })
-  const colaboradoresPendientesDotacion = planeacionDotacion
-    .filter((item) => item.estado !== "Entregado ciclo")
-    .map((item) => colaboradores.find((colaborador) => colaborador.id === item.colaboradorId))
-    .filter(Boolean)
-  const productosDotacionActivos = productos
-    .filter((producto) => producto.categoria === "Dotación" && producto.estado === "Activo")
-  const productosDotacionPlaneacion = (() => {
-    const productosPorClave = new Map(
-      productosDotacionActivos.map((producto) => [claveProductoInventario(producto), producto])
-    )
-    const productosPlaneacion = [...productosDotacionActivos]
-    const catalogoPorClave = new Map()
-
-    ;[...catalogoProductos, ...catalogoProductosBase]
-      .filter((item) => item.categoria === "Dotación")
-      .forEach((item) => {
-        const clave = claveItemCatalogo(item)
-        const actual = catalogoPorClave.get(clave)
-        const variantes = Array.from(new Set([
-          ...(actual?.variantes || []),
-          ...(item.variantes || []),
-        ].map(normalizarTalla).filter(Boolean)))
-
-        catalogoPorClave.set(clave, {
-          ...actual,
-          ...item,
-          variantes,
-          stockMinimo: Number(item.stockMinimo ?? actual?.stockMinimo ?? obtenerStockMinimo(item)),
-        })
-      })
-
-    catalogoPorClave.forEach((itemCatalogo) => {
-      const tipos = opcionesSeparadas(itemCatalogo.tipo)
-      const variantes = itemCatalogo.variantes || []
-
-      tipos.forEach((tipo) => {
-        variantes.forEach((varianteCatalogo) => {
-          const variante = normalizarTalla(varianteCatalogo)
-          const productoPlaneado = {
-            id: `catalogo:${claveItemCatalogo(itemCatalogo)}:${normalizarTexto(tipo)}:${normalizarTexto(variante)}`,
-            categoria: itemCatalogo.categoria,
-            nombre: itemCatalogo.nombre,
-            tipo,
-            variante,
-            unidad: itemCatalogo.unidad,
-            stockActual: 0,
-            stockMinimo: Number(itemCatalogo.stockMinimo ?? obtenerStockMinimo(itemCatalogo)),
-            ubicacion: "Sin crear",
-            estado: "Activo",
-          }
-          const claveProducto = claveProductoInventario(productoPlaneado)
-
-          if (!productosPorClave.has(claveProducto)) {
-            productosPorClave.set(claveProducto, productoPlaneado)
-            productosPlaneacion.push(productoPlaneado)
-          }
-        })
-      })
-    })
-
-    colaboradoresPendientesDotacion.forEach((colaborador) => {
-      productosPlaneacion
-        .filter((producto) =>
-          productoPedidoDotacionSinTallaParaColaborador(producto, colaborador)
-        )
-        .forEach((producto) => {
-          const tallaSugerida = tallaProductoParaColaborador(producto, colaborador)
-          const variante = tallaSugerida || normalizarTalla(producto.variante)
-          const productoPlaneado = {
-            ...producto,
-            id: `planeado:${producto.id}:${normalizarTexto(variante)}`,
-            variante,
-            stockActual: 0,
-            stockMinimo: obtenerStockMinimo(producto),
-          }
-          const clave = claveProductoInventario(productoPlaneado)
-
-          if (!productosPorClave.has(clave)) {
-            productosPorClave.set(clave, productoPlaneado)
-            productosPlaneacion.push(productoPlaneado)
-          }
-        })
-    })
-
-    return productosPlaneacion
-  })()
-  const demandaDotacionPorProducto = new Map(
-    productosDotacionPlaneacion
-      .map((producto) => [
-        String(producto.id),
-        colaboradoresPendientesDotacion.filter((colaborador) =>
-          productoPedidoDotacionParaColaborador(producto, colaborador)
-        ).length,
-      ])
-  )
-  const claveProductoPrecio = (item) => [
-    normalizarTexto(item.categoria),
-    normalizarTexto(item.producto || item.nombre),
-    normalizarTexto(item.tipo),
-    normalizarTexto(normalizarTalla(item.variante)),
-    normalizarTexto(item.unidad),
-  ].join("__")
-  const valorUltimaCompraPorProducto = new Map()
-  compras
-    .slice()
-    .sort((a, b) =>
-      String(b.fecha || "").localeCompare(String(a.fecha || "")) ||
-      String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""))
-    )
-    .forEach((compraItem) => {
-      ;(compraItem.lineas || []).forEach((linea) => {
-        const valorUnitario = Number(linea.valorUnitario || 0)
-        const claves = [
-          linea.productoId ? `id:${linea.productoId}` : "",
-          `datos:${claveProductoPrecio(linea)}`,
-        ].filter(Boolean)
-
-        claves.forEach((clave) => {
-          if (!valorUltimaCompraPorProducto.has(clave)) {
-            valorUltimaCompraPorProducto.set(clave, valorUnitario)
-          }
-        })
-      })
-    })
-  const obtenerValorUnitarioProducto = (producto) =>
-    valorUltimaCompraPorProducto.get(`id:${producto.id}`) ??
-    valorUltimaCompraPorProducto.get(`datos:${claveProductoPrecio(producto)}`) ??
-    0
-  const demandaBrutaDotacionPorCentro = Object.values(
-    colaboradoresPendientesDotacion.reduce((acumulado, colaborador) => {
-      productosDotacionPlaneacion
-        .filter((producto) =>
-          productoPedidoDotacionParaColaborador(producto, colaborador)
-        )
-        .forEach((producto) => {
-          const clave = [
-            colaborador.centroCostos || "-",
-            colaborador.nombreCentroCostos || "Sin centro",
-            producto.id,
-          ].join("__")
-          const valorUnitario = obtenerValorUnitarioProducto(producto)
-
-          acumulado[clave] = acumulado[clave] || {
-            centroCostos: colaborador.centroCostos || "-",
-            nombreCentroCostos: colaborador.nombreCentroCostos || "Sin centro",
-            producto: producto.nombre,
-            categoria: producto.categoria,
-            tipo: producto.tipo,
-            variante: producto.variante,
-            unidad: producto.unidad,
-            productoId: producto.id,
-            demandaBruta: 0,
-            cantidad: 0,
-            valorUnitario,
-            valorTotal: 0,
-          }
-          acumulado[clave].demandaBruta += 1
-        })
-
-      return acumulado
-    }, {})
-  )
-  const productosPedidoBase = categoriaPedido === "Dotación" ? productosDotacionPlaneacion : productos
-  const productosPedidoAutomatico = productosPedidoBase
-    .filter((producto) => {
-      if (producto.categoria !== categoriaPedido || producto.estado !== "Activo") return false
-
-      if (categoriaPedido === "Dotación") {
-        const demandaProxima = demandaDotacionPorProducto.get(String(producto.id)) || 0
-        const cantidadSugerida = Math.max(
-          0,
-          demandaProxima + Number(producto.stockMinimo) - Number(producto.stockActual)
-        )
-
-        return demandaProxima > 0 && cantidadSugerida > 0
-      }
-
-      return esProductoStockBajo(producto)
-    })
-    .map((producto) => ({
-      ...producto,
-      demandaProxima: categoriaPedido === "Dotación"
-        ? demandaDotacionPorProducto.get(String(producto.id)) || 0
-        : 0,
-      cantidadSugerida: categoriaPedido === "Dotación"
-        ? Math.max(
-          0,
-          (demandaDotacionPorProducto.get(String(producto.id)) || 0) +
-            Number(producto.stockMinimo) -
-            Number(producto.stockActual)
-        )
-        : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
-    }))
-    .map((producto) => {
-      const valorUnitario = obtenerValorUnitarioProducto(producto)
-
-      return {
-        ...producto,
-        valorUnitario,
-        valorTotal: Number(valorUnitario) * Number(producto.cantidadSugerida || 0),
-      }
-    })
-    .sort((a, b) => b.cantidadSugerida - a.cantidadSugerida)
-  const pedidoSugeridoPorProducto = new Map(
-    productosPedidoAutomatico.map((producto) => [String(producto.id), Number(producto.cantidadSugerida || 0)])
-  )
-  const detallePedidoDotacionPorCentro = Object.values(
-    demandaBrutaDotacionPorCentro.reduce((grupos, item) => {
-      const productoId = String(item.productoId)
-
-      grupos[productoId] = grupos[productoId] || []
-      grupos[productoId].push(item)
-
-      return grupos
-    }, {})
-  )
-    .flatMap((itemsProducto) => {
-      const productoId = String(itemsProducto[0]?.productoId || "")
-      const pedidoSugerido = pedidoSugeridoPorProducto.get(productoId) || 0
-      const demandaTotal = itemsProducto.reduce((total, item) => total + Number(item.demandaBruta || 0), 0)
-
-      if (pedidoSugerido <= 0 || demandaTotal <= 0) return []
-
-      const repartidos = itemsProducto.map((item) => {
-        const exacto = (Number(item.demandaBruta || 0) / demandaTotal) * pedidoSugerido
-        const cantidadBase = Math.floor(exacto)
-
-        return {
-          ...item,
-          cantidad: cantidadBase,
-          residuo: exacto - cantidadBase,
-        }
-      })
-      let unidadesRestantes = pedidoSugerido - repartidos.reduce((total, item) => total + item.cantidad, 0)
-
-      repartidos
-        .slice()
-        .sort((a, b) =>
-          b.residuo - a.residuo ||
-          Number(b.demandaBruta || 0) - Number(a.demandaBruta || 0) ||
-          String(a.centroCostos).localeCompare(String(b.centroCostos))
-        )
-        .forEach((item) => {
-          if (unidadesRestantes <= 0) return
-
-          item.cantidad += 1
-          unidadesRestantes -= 1
-        })
-
-      return repartidos
-        .filter((item) => item.cantidad > 0)
-        .map((item) => ({
-          centroCostos: item.centroCostos,
-          nombreCentroCostos: item.nombreCentroCostos,
-          producto: item.producto,
-          categoria: item.categoria,
-          tipo: item.tipo,
-          variante: item.variante,
-          unidad: item.unidad,
-          cantidad: item.cantidad,
-          valorUnitario: item.valorUnitario,
-          valorTotal: Number(item.valorUnitario || 0) * Number(item.cantidad || 0),
-        }))
-    })
-    .sort((a, b) =>
-      String(a.centroCostos).localeCompare(String(b.centroCostos)) ||
-      a.producto.localeCompare(b.producto) ||
-      String(a.variante).localeCompare(String(b.variante))
-    )
   const rolesDisponibles = ["Administrador", "Gestion Humana", "Bodega", "Consulta"]
   const categoriasDisponibles = ["Dotación", "EPP"]
   const estadosPerfil = ["Activo", "Inactivo"]
@@ -4414,9 +4430,9 @@ function App() {
 
               <h2 style={{ marginTop: "34px" }}>Usuarios de la app</h2>
 
-              <input
+              <BuscadorFiltro
                 value={busquedaPerfiles}
-                onChange={(e) => setBusquedaPerfiles(e.target.value)}
+                onChange={setBusquedaPerfiles}
                 placeholder="Buscar usuario por nombre, correo, rol o estado"
                 style={campoBusqueda}
               />
@@ -4654,9 +4670,9 @@ function App() {
               </form>
 
               <h3>Items del catálogo</h3>
-              <input
+              <BuscadorFiltro
                 value={busquedaCatalogo}
-                onChange={(e) => setBusquedaCatalogo(e.target.value)}
+                onChange={setBusquedaCatalogo}
                 placeholder="Buscar item del catálogo"
                 style={campoBusqueda}
               />
@@ -5026,9 +5042,9 @@ function App() {
             )}
 
             <h3 style={{ marginTop: "26px" }}>Historial de compras</h3>
-            <input
+            <BuscadorFiltro
               value={busquedaCompras}
-              onChange={(e) => setBusquedaCompras(e.target.value)}
+              onChange={setBusquedaCompras}
               placeholder="Buscar por factura, proveedor, responsable o producto"
               style={campoBusqueda}
             />
@@ -5160,9 +5176,9 @@ function App() {
 
           <h2 style={{ marginTop: "34px" }}>Productos registrados</h2>
 
-          <input
+          <BuscadorFiltro
             value={busquedaProductos}
-            onChange={(e) => setBusquedaProductos(e.target.value)}
+            onChange={setBusquedaProductos}
             placeholder="Buscar producto por nombre, tipo, talla, ubicación o estado"
             style={campoBusqueda}
           />
@@ -5293,9 +5309,9 @@ function App() {
 
           <h2 style={{ marginTop: "34px" }}>Movimientos recientes</h2>
 
-          <input
+          <BuscadorFiltro
             value={busquedaMovimientos}
-            onChange={(e) => setBusquedaMovimientos(e.target.value)}
+            onChange={setBusquedaMovimientos}
             placeholder="Buscar movimiento por fecha, producto, tipo u observación"
             style={campoBusqueda}
           />
@@ -5525,9 +5541,9 @@ function App() {
 
           <h2 style={{ marginTop: "34px" }}>Colaboradores registrados</h2>
 
-          <input
+          <BuscadorFiltro
             value={busquedaColaboradores}
-            onChange={(e) => setBusquedaColaboradores(e.target.value)}
+            onChange={setBusquedaColaboradores}
             placeholder="Buscar colaborador por nombre, identificación, cargo, grupo o centro de costos"
             style={campoBusqueda}
           />
@@ -5853,9 +5869,9 @@ function App() {
 
           <h2 style={{ marginTop: "34px" }}>Historial de entregas</h2>
 
-          <input
+          <BuscadorFiltro
             value={busquedaEntregas}
-            onChange={(e) => setBusquedaEntregas(e.target.value)}
+            onChange={setBusquedaEntregas}
             placeholder="Buscar entrega por colaborador, identificación, producto, fecha o estado"
             style={campoBusqueda}
           />
