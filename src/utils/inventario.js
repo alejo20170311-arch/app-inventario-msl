@@ -99,6 +99,8 @@ export function productoRequiereTalla(producto) {
 }
 export function productoSugeridoParaColaborador(producto, colaborador) {
   if (!colaborador) return false
+  if (normalizarTexto(producto.categoria) !== "dotacion") return false
+  if (!productoIncluidoEnTipoDotacion(producto, colaborador.tipoDotacion)) return false
 
   const nombre = producto.nombre.toLowerCase()
   const tipo = producto.tipo.toLowerCase()
