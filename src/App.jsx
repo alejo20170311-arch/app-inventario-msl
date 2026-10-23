@@ -24,6 +24,7 @@ import {
 import { Campo } from "./components/Campo"
 import { camposTallasColaborador } from "./data/tallas"
 import { interpretarColaboradores, normalizarDocumento } from "./utils/importacionColaboradores"
+import { precioPedidoSugerido } from "./utils/preciosPedido"
 import { BuscadorFiltro } from "./components/BuscadorFiltro"
 import { LayoutInventario } from "./components/LayoutInventario"
 import { ListaBuscable } from "./components/ListaBuscable"
@@ -82,6 +83,7 @@ import {
   esProductoStockBajo,
   esProductoStockCritico,
   limpiarObservacion,
+  nombreProductoActual,
   normalizarTalla,
   normalizarTexto,
   obtenerStockMinimo,
@@ -689,7 +691,7 @@ function App() {
     )
     const claveProductoPrecio = (item) => [
       normalizarTexto(item.categoria),
-      normalizarTexto(item.producto || item.nombre),
+      normalizarTexto(nombreProductoActual(item.producto || item.nombre)),
       normalizarTexto(item.tipo),
       normalizarTexto(normalizarTalla(item.variante)),
       normalizarTexto(item.unidad),
@@ -732,7 +734,7 @@ function App() {
               colaborador.nombreCentroCostos || "Sin centro",
               producto.id,
             ].join("__")
-            const valorUnitario = obtenerValorUnitarioProducto(producto)
+            const valorUnitario = precioPedidoSugerido(producto, obtenerValorUnitarioProducto(producto))
 
             acumulado[clave] = acumulado[clave] || {
               centroCostos: colaborador.centroCostos || "-",
@@ -786,7 +788,7 @@ function App() {
           : Math.max(1, Number(producto.stockMinimo) - Number(producto.stockActual)),
       }))
       .map((producto) => {
-        const valorUnitario = obtenerValorUnitarioProducto(producto)
+        const valorUnitario = precioPedidoSugerido(producto, obtenerValorUnitarioProducto(producto))
 
         return {
           ...producto,
@@ -1733,7 +1735,7 @@ function App() {
   }
 
   function claveItemCatalogo(item) {
-    return `${item.categoria}__${normalizarTexto(item.nombre)}`
+    return `${item.categoria}__${normalizarTexto(nombreProductoActual(item.nombre))}`
   }
 
   function prepararEdicionItemCatalogo(item) {
@@ -2096,7 +2098,7 @@ function App() {
   function claveProductoInventario(item) {
     return [
       item.categoria,
-      item.nombre || item.producto,
+      nombreProductoActual(item.nombre || item.producto),
       item.tipo,
       normalizarTalla(item.variante),
       item.unidad,

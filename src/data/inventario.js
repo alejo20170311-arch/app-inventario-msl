@@ -15,8 +15,9 @@ export const catalogoProductosBase = [
   { categoria: "Dotación", nombre: "MSL Camisa jean hombre mtto", tipo: "Camisa", unidad: "Unidad", variantes: ["S", "M", "L", "XL", "2XL", "3XL"] },
   { categoria: "Dotación", nombre: "MSL Camisa polo dama", tipo: "Camisa", unidad: "Unidad", variantes: ["XS", "S", "M", "L", "XL"] },
   { categoria: "Dotación", nombre: "MSL Camisa polo hombre", tipo: "Camisa", unidad: "Unidad", variantes: ["S", "M", "L", "XL", "2XL", "3XL"] },
-  { categoria: "Dotación", nombre: "MSL Jean hombre", tipo: "Jean", unidad: "Unidad", variantes: ["28", "30", "32", "34", "36", "38", "40"] },
-  { categoria: "Dotación", nombre: "MSL Jean mujer", tipo: "Jean", unidad: "Unidad", variantes: ["6", "8", "10", "12", "14", "16"] },
+  { categoria: "Dotación", nombre: "Pantalon Jean Hombre Cinta Reflectiva", tipo: "Jean", unidad: "Unidad", variantes: ["28", "30", "32", "34", "36", "38", "40"] },
+  { categoria: "Dotación", nombre: "Jean Hombre Licrado", tipo: "Jean", unidad: "Unidad", variantes: ["28", "30", "32", "34", "36", "38", "40"] },
+  { categoria: "Dotación", nombre: "Jean Mujer Licrado", tipo: "Jean", unidad: "Unidad", variantes: ["6", "8", "10", "12", "14", "16"] },
   { categoria: "Dotación", nombre: "MSL Cofia unisex", tipo: "Cofia", unidad: "Unidad", variantes: ["unica"] },
   { categoria: "Dotación", nombre: "Chaleco Home Center", tipo: "Chaleco", unidad: "Unidad", variantes: ["S", "M", "L", "XL"] },
   { categoria: "Dotación", nombre: "Bota de seguridad", tipo: "Calzado", unidad: "Par", variantes: ["35", "36", "37", "38", "39", "40", "41", "42", "43"] },
@@ -146,17 +147,17 @@ export const colaboradorVacio = {
 
 export const tiposDotacion = [
   "No aplica",
-  "MSL Camisa azul 3/4 clara dama p. venta+MSL Jean mujer+Bota de seguridad",
+  "MSL Camisa azul 3/4 clara dama p. venta+Jean Mujer Licrado+Bota de seguridad",
   "MSL Operario azul dama uniforme+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura hombre admon+Bota de seguridad+MSL Cofia unisex",
   "MSL Operario azul hombre uniforme+Bota de seguridad+MSL Cofia unisex",
-  "MSL Camisa polo hombre+MSL Jean hombre+Bota de seguridad+MSL Cofia unisex",
+  "MSL Camisa polo hombre+Pantalon Jean Hombre Cinta Reflectiva+Bota de seguridad+MSL Cofia unisex",
   "Bono Sodexo",
   "MSL Bata azul oscura dama admon+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura dama calidad+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura hombre calidad+Bota de seguridad+MSL Cofia unisex",
-  "MSL Camisa azul clara hombre p. venta+MSL Jean hombre+Bota de seguridad",
-  "MSL Camisa jean hombre mtto+MSL Jean hombre+Bota de seguridad+MSL Cofia unisex",
+  "MSL Camisa azul clara hombre p. venta+Jean Hombre Licrado+Bota de seguridad",
+  "MSL Camisa jean hombre mtto+Pantalon Jean Hombre Cinta Reflectiva+Bota de seguridad+MSL Cofia unisex",
   "MSL Bata azul oscura hombre admon+MSL Cofia unisex",
 ]
 

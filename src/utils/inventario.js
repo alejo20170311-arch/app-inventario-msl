@@ -67,9 +67,9 @@ export function productoAplicaSexoColaborador(producto, colaborador) {
 export function productoIncluidoEnTipoDotacion(producto, tipoDotacion) {
   const partes = String(tipoDotacion || "")
     .split("+")
-    .map((item) => normalizarTexto(item))
+    .map((item) => normalizarTexto(nombreProductoActual(item)))
     .filter(Boolean)
-  const nombreProducto = normalizarTexto(producto.nombre)
+  const nombreProducto = normalizarTexto(nombreProductoActual(producto.nombre))
   const nombreProductoSinNumeros = nombreProducto.replace(/[0-9]/g, "")
 
   if (partes.length === 0 || partes.includes("noaplica")) return false
@@ -223,3 +223,22 @@ export function normalizarTexto(texto) {
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]/g, "")
   }
+
+const nombresProductosActuales = {
+  msljeanhombre: "Pantalon Jean Hombre Cinta Reflectiva",
+  pantalonjeanhombrecintareflectiva: "Pantalon Jean Hombre Cinta Reflectiva",
+  jeanhombre: "Jean Hombre Licrado",
+  msljeanhombrelicrado: "Jean Hombre Licrado",
+  pantalonjeanhombrelicrado: "Jean Hombre Licrado",
+  jeanhombrelicrado: "Jean Hombre Licrado",
+  msljeanmujer: "Jean Mujer Licrado",
+  jeanmujer: "Jean Mujer Licrado",
+  msljeanmujerlicrado: "Jean Mujer Licrado",
+  pantalonjeanmujerlicrado: "Jean Mujer Licrado",
+  jeanmujerlicrado: "Jean Mujer Licrado",
+}
+
+export function nombreProductoActual(nombre) {
+  const clave = normalizarTexto(nombre)
+  return Object.hasOwn(nombresProductosActuales, clave) ? nombresProductosActuales[clave] : nombre
+}

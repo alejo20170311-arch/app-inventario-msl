@@ -1,6 +1,6 @@
 import { catalogoProductosBase } from "../data/inventario"
 import { camposTallasColaborador } from "../data/tallas"
-import { normalizarTalla, obtenerStockMinimo } from "../utils/inventario"
+import { nombreProductoActual, normalizarTalla, obtenerStockMinimo } from "../utils/inventario"
 
 import { obtenerSesionActiva, supabase } from "./supabase"
 
@@ -18,7 +18,7 @@ export function catalogoDesdeSupabase(item) {
   return {
     id: item.id,
     categoria: item.categoria,
-    nombre: item.nombre,
+    nombre: nombreProductoActual(item.nombre),
     tipo: item.tipo,
     unidad: item.unidad,
     variantes: Array.isArray(item.variantes) ? item.variantes.map(normalizarTalla) : [],
@@ -33,7 +33,7 @@ export function catalogoParaSupabase(item) {
 
   return {
     categoria: item.categoria,
-    nombre: item.nombre,
+    nombre: nombreProductoActual(item.nombre),
     tipo: item.tipo,
     unidad: item.unidad,
     variantes: Array.isArray(item.variantes) ? item.variantes.map(normalizarTalla) : [],
@@ -44,7 +44,7 @@ export function catalogoParaSupabase(item) {
 export function productoDesdeSupabase(item) {
   return {
     id: item.id,
-    nombre: item.nombre,
+    nombre: nombreProductoActual(item.nombre),
     categoria: item.categoria,
     tipo: item.tipo,
     variante: normalizarTalla(item.variante),
@@ -59,7 +59,7 @@ export function productoDesdeSupabase(item) {
 export function productoParaSupabase(producto) {
   const payload = {}
 
-  if ("nombre" in producto) payload.nombre = producto.nombre
+  if ("nombre" in producto) payload.nombre = nombreProductoActual(producto.nombre)
   if ("categoria" in producto) payload.categoria = producto.categoria
   if ("tipo" in producto) payload.tipo = producto.tipo
   if ("variante" in producto) payload.variante = normalizarTalla(producto.variante)
@@ -82,7 +82,7 @@ export function colaboradorDesdeSupabase(item) {
     grupo: item.grupo,
     centroCostos: item.centro_costos,
     nombreCentroCostos: item.nombre_centro_costos,
-    tipoDotacion: item.tipo_dotacion || "No aplica",
+    tipoDotacion: (item.tipo_dotacion || "No aplica").split("+").map(nombreProductoActual).join("+"),
     sexo: item.sexo,
     estado: item.estado,
     tallaAntifluido: normalizarTalla(item.talla_antifluido),
