@@ -22,6 +22,8 @@ import {
 } from "lucide-react"
 
 import { Campo } from "./components/Campo"
+import { camposTallasColaborador } from "./data/tallas"
+import { interpretarColaboradores, normalizarDocumento } from "./utils/importacionColaboradores"
 import { BuscadorFiltro } from "./components/BuscadorFiltro"
 import { LayoutInventario } from "./components/LayoutInventario"
 import { ListaBuscable } from "./components/ListaBuscable"
@@ -49,6 +51,7 @@ import {
   eliminarProductoAdminRpc,
   guardarCatalogoProductoRpc,
   guardarColaboradorRpc,
+  verificarEsquemaTallas,
   guardarProductoMovimientoRpc,
   adjuntarFacturaCompraRpc,
   registrarCompraRpc,
@@ -69,7 +72,7 @@ import {
   planearDotacionColaboradores,
 } from "./utils/dotacion"
 import { fechaLocalISO, mesLocalISO } from "./utils/fechas"
-import { leerFilasCompra, leerFilasEntrega, leerFilasProducto } from "./utils/importacionCompras"
+import { leerFilasArchivo, leerFilasCompra, leerFilasEntrega, leerFilasProducto } from "./utils/importacionCompras"
 import {
   coincideBusqueda,
   coincideFiltroColaborador,
@@ -95,7 +98,6 @@ import {
   numeroSeguro,
   textoLargoSeguro,
   textoSeguro,
-  validarArchivoCsv,
   validarCamposRequeridos,
 } from "./utils/seguridad"
 import {
@@ -997,7 +999,7 @@ function App() {
   )
   const colaboradoresFiltrados = colaboradores.filter((item) =>
     coincideFiltroColaborador(item, filtroColaboradores) &&
-    coincideBusqueda(item, busquedaColaboradores, ["identificacion", "nombreCompleto", "cargo", "subArea", "grupo", "centroCostos", "nombreCentroCostos", "tipoDotacion", "sexo", "estado", "tallaAntifluido", "tallaBata", "tallaCamisa", "tallaPantalon", "tallaBotas"])
+    coincideBusqueda(item, busquedaColaboradores, ["identificacion", "nombreCompleto", "cargo", "subArea", "grupo", "centroCostos", "nombreCentroCostos", "tipoDotacion", "sexo", "estado", ...camposTallasColaborador.map(({ campo }) => campo)])
   )
   const entregasFiltradas = entregas.filter((item) =>
     coincideFiltroEntrega(item, filtroEntregas) &&
@@ -1255,7 +1257,7 @@ function App() {
   const motivosEntrega = ["Ingreso", "Reposición", "Deterioro", "Dotación periódica", "Cambio de talla", "Pérdida"]
   const tallasRopa = ["N/A", "XS", "S", "M", "L", "XL", "2XL", "3XL"]
   const tallasPantalon = ["N/A", "6", "8", "10", "12", "14", "16", "28", "30", "32", "34", "36", "38", "40"]
-  const tallasBotas = ["35", "36", "37", "38", "39", "40", "41", "42", "43"]
+  const tallasBotas = ["N/A", ...Array.from({ length: 15 }, (_, indice) => String(indice + 34))]
   const opcionesColaboradoresEntrega = colaboradores
     .filter((item) => item.estado === "Activo")
     .map((item) => ({
@@ -2924,6 +2926,9 @@ function App() {
       tallaAntifluido: item.tallaAntifluido,
       tallaBata: item.tallaBata,
       tallaCamisa: item.tallaCamisa,
+      tallaCamisetaManufactura: item.tallaCamisetaManufactura,
+      tallaCamisaPolo: item.tallaCamisaPolo,
+      tallaChaquetaJean: item.tallaChaquetaJean,
       tallaPantalon: item.tallaPantalon,
       tallaBotas: item.tallaBotas,
     })
@@ -3290,11 +3295,8 @@ function App() {
       nombreCentroCostos: textoSeguro(colaborador.nombreCentroCostos, 160),
       tipoDotacion: textoSeguro(colaborador.tipoDotacion || "No aplica", 500),
       sexo: textoSeguro(colaborador.sexo, 40),
-      tallaAntifluido: textoSeguro(normalizarTalla(colaborador.tallaAntifluido), 20),
-      tallaBata: textoSeguro(normalizarTalla(colaborador.tallaBata), 20),
-      tallaCamisa: textoSeguro(normalizarTalla(colaborador.tallaCamisa), 20),
-      tallaPantalon: textoSeguro(colaborador.tallaPantalon, 20),
-      tallaBotas: textoSeguro(colaborador.tallaBotas, 20),
+      ...Object.fromEntries(camposTallasColaborador.map(({ campo }) =>
+        [campo, textoSeguro(normalizarTalla(colaborador[campo]), 20)])),
     }
 
     try {
@@ -3960,11 +3962,7 @@ function App() {
       { titulo: "Tipo dotación", campo: "tipoDotacion" },
       { titulo: "Sexo", campo: "sexo" },
       { titulo: "Estado", campo: "estado" },
-      { titulo: "Talla antifluido", campo: "tallaAntifluido" },
-      { titulo: "Talla bata", campo: "tallaBata" },
-      { titulo: "Talla camisa", campo: "tallaCamisa" },
-      { titulo: "Talla pantalón", campo: "tallaPantalon" },
-      { titulo: "Talla botas", campo: "tallaBotas" },
+      ...camposTallasColaborador.map(({ titulo, campo }) => ({ titulo, campo })),
     ], colaboradores)
   }
 
@@ -4163,131 +4161,79 @@ function App() {
   }
 
 
-  function importarColaboradores(evento) {
-    if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite importar colaboradores.")) {
-      evento.target.value = ""
-      return
-    }
-
-    if (!accionPermitida("importar-colaboradores", 3000)) {
-      evento.target.value = ""
-      return
-    }
-
-    const archivo = evento.target.files?.[0]
-
+  async function importarColaboradores(evento, soloTallas = false) {
+    const input = evento.target
+    const archivo = input.files?.[0]
     if (!archivo) return
-
-    try {
-      validarArchivoCsv(archivo)
-    } catch (error) {
-      mostrarErrorSupabase(error, "validar el archivo")
-      evento.target.value = ""
+    if (!requierePermiso(puedeGestionarColaboradores, "Tu rol no permite importar colaboradores.") ||
+      accionGuardando || !accionPermitida("importar-colaboradores", 3000)) {
+      input.value = ""
       return
     }
 
-    const lector = new FileReader()
-
-    lector.onload = async () => {
-      const { leerCsv } = await import("./utils/csv")
-      const filas = leerCsv(String(lector.result || ""))
-
-      if (filas.length < 2) {
-        mostrarMensaje("El archivo no tiene datos para importar.")
-        evento.target.value = ""
-        return
+    setAccionGuardando("importar-colaboradores")
+    try {
+      if (!/\.(csv|xlsx)$/i.test(archivo.name) || archivo.size > 5 * 1024 * 1024) {
+        throw new Error("Selecciona un archivo CSV o XLSX de hasta 5 MB.")
       }
-
-      const encabezados = filas[0].map(normalizarTexto)
-      const obtenerValor = (fila, nombres) => {
-        const indice = nombres
-          .map(normalizarTexto)
-          .map((nombre) => encabezados.indexOf(nombre))
-          .find((posicion) => posicion >= 0)
-
-        return indice >= 0 ? String(fila[indice] || "").trim() : ""
+      const filas = interpretarColaboradores(await leerFilasArchivo(archivo), { soloTallas })
+      if (!filas.length) throw new Error("El archivo no tiene colaboradores para importar.")
+      const porDocumento = new Map(colaboradores.map(item => [normalizarDocumento(item.identificacion), item]))
+      if (porDocumento.size !== colaboradores.length) {
+        throw new Error("Hay documentos repetidos en el personal guardado. Revisa las identificaciones antes de importar.")
       }
-
-      const colaboradoresImportados = filas.slice(1)
-        .map((fila) => {
-          const nombreCentro = obtenerValor(fila, ["Nombre centro de costos", "Nombre de centro de costos", "Nombre centro"])
-          const centroPorNombre = centrosCostos.find(
-            (centro) => normalizarTexto(centro.nombre) === normalizarTexto(nombreCentro)
-          )
-          const identificacion = textoSeguro(obtenerValor(fila, ["Identificación", "Identificacion", "Cédula", "Cedula"]), 40)
-          const nombreCompleto = textoSeguro(obtenerValor(fila, ["Nombre completo", "Nombre"]), 160)
-
-          if (!identificacion || !nombreCompleto) {
-            return null
-          }
-
-          return {
-            identificacion,
-            nombreCompleto,
-            cargo: textoSeguro(obtenerValor(fila, ["Cargo"]) || "Sin cargo", 120),
-            subArea: textoSeguro(obtenerValor(fila, ["Sub-Área", "Sub area", "Subarea"]) || "", 120),
-            grupo: textoSeguro(obtenerValor(fila, ["Grupo"]) || "", 40),
-            centroCostos: textoSeguro(obtenerValor(fila, ["Centro de costos", "Centro costos", "Ceco"]) || centroPorNombre?.codigo || "", 40),
-            nombreCentroCostos: textoSeguro(nombreCentro || centroPorNombre?.nombre || "", 160),
-            tipoDotacion: textoSeguro(obtenerValor(fila, ["Tipo dotación", "Tipo dotacion"]) || "No aplica", 500),
-            sexo: textoSeguro(obtenerValor(fila, ["Sexo"]) || "Femenino", 40),
-            estado: textoSeguro(obtenerValor(fila, ["Estado"]) || "Activo", 20),
-            tallaAntifluido: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla de antifluido", "Talla antifluido", "Talla de antifluidos"]) || "N/A"), 20),
-            tallaBata: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla de bata", "Talla bata"]) || "N/A"), 20),
-            tallaCamisa: textoSeguro(normalizarTalla(obtenerValor(fila, ["Talla camisa", "Talla de camisa"]) || "N/A"), 20),
-            tallaPantalon: textoSeguro(obtenerValor(fila, ["Talla pantalón", "Talla pantalon", "Talla de pantalón", "Talla de pantalon"]) || "N/A", 20),
-            tallaBotas: textoSeguro(obtenerValor(fila, ["Talla de botas", "Talla botas", "Talla bota"]) || "", 20),
+      let omitidos = 0
+      const pendientes = []
+      for (const { fila, identificacion, datos } of filas) {
+        const existente = porDocumento.get(identificacion)
+        if (soloTallas && !existente) {
+          omitidos += 1
+          continue
+        }
+        if (!existente && !datos.nombreCompleto) throw new Error(`Fila ${fila}: falta el nombre completo.`)
+        const payload = { ...colaboradorVacio, ...existente, ...datos }
+        // Size-only imports preserve the employee's name, document and assignment.
+        if (soloTallas) payload.identificacion = existente.identificacion
+        if (!soloTallas && datos.nombreCentroCostos && !datos.centroCostos) {
+          const centro = centrosCostos.find(item => normalizarTexto(item.nombre) === normalizarTexto(datos.nombreCentroCostos))
+          if (centro) payload.centroCostos = centro.codigo
+        }
+        pendientes.push({ existente, payload })
+      }
+      if (!pendientes.length) throw new Error(`No hay documentos coincidentes para actualizar. Omitidos: ${omitidos}.`)
+      await verificarEsquemaTallas()
+      let guardados = 0
+      let nuevos = 0
+      const errores = []
+      for (let inicio = 0; inicio < pendientes.length; inicio += 10) {
+        const lote = pendientes.slice(inicio, inicio + 10)
+        const resultados = await Promise.allSettled(lote.map(({ existente, payload }) => guardarColaboradorRpc({
+          colaboradorId: existente?.id || null,
+          colaboradorPayload: payload,
+        })))
+        resultados.forEach((resultado, indice) => {
+          if (resultado.status === "fulfilled") {
+            porDocumento.set(normalizarDocumento(resultado.value.identificacion), resultado.value)
+            guardados += 1
+            if (!lote[indice].existente) nuevos += 1
+          } else {
+            errores.push(`${lote[indice].payload.identificacion}: ${mensajeSeguroError(resultado.reason)}`)
           }
         })
-        .filter(Boolean)
-
-      if (colaboradoresImportados.length === 0) {
-        mostrarMensaje("No encontró colaboradores válidos. Revisa que existan columnas de identificación y nombre.")
-        evento.target.value = ""
-        return
       }
-
-      const colaboradoresUnicos = Array.from(
-        new Map(colaboradoresImportados.map((item) => [item.identificacion, item])).values()
-      )
-      const colaboradoresPorIdentificacion = new Map(
-        colaboradores.map((item) => [item.identificacion, item])
-      )
-      const nuevos = colaboradoresUnicos.filter(
-        (item) => !colaboradoresPorIdentificacion.has(item.identificacion)
-      ).length
-      const actualizados = colaboradoresUnicos.length - nuevos
-
-      try {
-        const colaboradoresGuardados = await Promise.all(
-          colaboradoresUnicos.map((item) => {
-            const existente = colaboradoresPorIdentificacion.get(item.identificacion)
-
-            return guardarColaboradorRpc({
-              colaboradorId: existente?.id || null,
-              colaboradorPayload: item,
-            })
-          })
-        )
-
-        colaboradoresGuardados.forEach((item) => {
-          colaboradoresPorIdentificacion.set(item.identificacion, item)
-        })
-
-        setColaboradores(
-          Array.from(colaboradoresPorIdentificacion.values()).sort((a, b) =>
-            a.nombreCompleto.localeCompare(b.nombreCompleto)
-          )
-        )
-        mostrarMensaje(`Importación lista. Nuevos: ${nuevos}. Actualizados: ${actualizados}.`)
-      } catch (error) {
-        mostrarErrorSupabase(error, "importar colaboradores")
+      setColaboradores(Array.from(porDocumento.values()).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto)))
+      if (colaboradorEditandoId) {
+        const editado = Array.from(porDocumento.values()).find(item => item.id === colaboradorEditandoId)
+        if (editado) setColaborador(editado)
       }
-
-      evento.target.value = ""
+      const resumen = `Importacion lista. Actualizados: ${guardados - nuevos}. Nuevos: ${nuevos}. Sin coincidencia: ${omitidos}.`
+      mostrarMensaje(errores.length ? `${resumen} Fallaron ${errores.length}: ${errores[0]}` : resumen, errores.length ? "error" : "exito")
+    } catch (error) {
+      mostrarErrorSupabase(error, soloTallas ? "actualizar tallas" : "importar colaboradores")
+    } finally {
+      setAccionGuardando("")
+      input.value = ""
     }
-
-    lector.readAsText(archivo, "UTF-8")
   }
 
   return (
@@ -5366,7 +5312,14 @@ function App() {
               <label style={botonSecundario}>
                 <Plus size={18} />
                 Importar colaboradores
-                <input type="file" accept=".csv" onChange={importarColaboradores} style={{ display: "none" }} />
+                <input type="file" accept=".csv,.xlsx" disabled={Boolean(accionGuardando)} onChange={importarColaboradores} style={{ display: "none" }} />
+              </label>
+            )}
+            {puedeGestionarColaboradores && (
+              <label style={botonSecundario}>
+                <Upload size={18} />
+                {estaGuardando("importar-colaboradores") ? "Importando..." : "Actualizar tallas"}
+                <input type="file" accept=".csv,.xlsx" disabled={Boolean(accionGuardando)} onChange={(evento) => importarColaboradores(evento, true)} style={{ display: "none" }} />
               </label>
             )}
             <button onClick={exportarColaboradores} style={botonSecundario}>
@@ -5473,52 +5426,19 @@ function App() {
               />
             </Campo>
 
-            <Campo texto="Talla antifluido">
-              <ListaBuscable
-                value={colaborador.tallaAntifluido}
-                onChange={(valor) => actualizarColaborador("tallaAntifluido", normalizarTalla(valor || "N/A"))}
-                options={tallasRopa}
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <Campo texto="Talla bata">
-              <ListaBuscable
-                value={colaborador.tallaBata}
-                onChange={(valor) => actualizarColaborador("tallaBata", normalizarTalla(valor || "N/A"))}
-                options={tallasRopa}
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <Campo texto="Talla camisa">
-              <ListaBuscable
-                value={colaborador.tallaCamisa}
-                onChange={(valor) => actualizarColaborador("tallaCamisa", normalizarTalla(valor || "N/A"))}
-                options={tallasRopa}
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <Campo texto="Talla pantalón">
-              <ListaBuscable
-                value={colaborador.tallaPantalon}
-                onChange={(valor) => actualizarColaborador("tallaPantalon", valor || "N/A")}
-                options={tallasPantalon}
-                style={campoFormulario}
-              />
-            </Campo>
-
-            <Campo texto="Talla botas">
-              <ListaBuscable
-                value={colaborador.tallaBotas}
-                onChange={(valor) => actualizarColaborador("tallaBotas", valor)}
-                options={tallasBotas}
-                placeholder="Selecciona talla"
-                required
-                style={campoFormulario}
-              />
-            </Campo>
+            {camposTallasColaborador.map(({ campo, titulo, opciones }) => (
+              <Campo key={campo} texto={titulo}>
+                <ListaBuscable
+                  value={colaborador[campo]}
+                  onChange={(valor) => actualizarColaborador(campo, normalizarTalla(valor || "N/A"))}
+                  options={Array.from(new Set([
+                    ...(opciones === "botas" ? tallasBotas : opciones === "pantalon" ? tallasPantalon : tallasRopa),
+                    colaborador[campo],
+                  ].filter(Boolean)))}
+                  style={campoFormulario}
+                />
+              </Campo>
+            ))}
 
             <div style={filaBotones}>
               <button disabled={estaGuardando("colaborador")} style={botonPrincipal}>
@@ -5556,7 +5476,7 @@ function App() {
             ))}
           </div>
 
-          <table style={tabla}>
+          <table style={{ ...tabla, minWidth: 0 }}>
             <thead>
               <tr style={encabezadoTabla}>
                 <th style={celdaTabla}>Identificación</th>
@@ -5586,8 +5506,10 @@ function App() {
                   <td style={celdaTabla}>{item.centroCostos}</td>
                   <td style={celdaTabla}>{item.nombreCentroCostos}</td>
                   <td style={celdaTabla}>{item.tipoDotacion || "No aplica"}</td>
-                  <td style={celdaTabla}>
-                    Antifluido: {item.tallaAntifluido} | Bata: {item.tallaBata} | Camisa: {item.tallaCamisa} | Pantalón: {item.tallaPantalon} | Botas: {item.tallaBotas}
+                  <td style={{ ...celdaTabla, minWidth: "240px", maxWidth: "300px", whiteSpace: "normal" }}>
+                    {camposTallasColaborador.map(({ campo, titulo }) => (
+                      <span key={campo} style={{ display: "block", marginBottom: "4px" }}>{titulo}: {item[campo] || "N/A"}</span>
+                    ))}
                   </td>
                   <td style={celdaTabla}>{item.estado}</td>
                   <td style={celdaTabla}>
@@ -5645,6 +5567,15 @@ function App() {
             <>
           <h2 style={{ marginTop: "34px" }}>Registrar entrega</h2>
 
+          {colaboradorEntrega && (
+            <div style={{ ...resumenTallas, gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", marginBottom: "16px" }}>
+              <strong style={{ gridColumn: "1 / -1" }}>Tallas del colaborador</strong>
+              {camposTallasColaborador.map(({ campo, titulo }) => (
+                <span key={campo}>{titulo}: {colaboradorEntrega[campo] || "N/A"}</span>
+              ))}
+            </div>
+          )}
+
           <form onSubmit={registrarEntrega} style={gridFormulario}>
             <Campo texto="Colaborador">
               <ListaBuscable
@@ -5657,16 +5588,6 @@ function App() {
               />
             </Campo>
 
-            {colaboradorEntrega && (
-              <div style={resumenTallas}>
-                <strong>Tallas del colaborador</strong>
-                <span>Antifluido: {colaboradorEntrega.tallaAntifluido}</span>
-                <span>Bata: {colaboradorEntrega.tallaBata}</span>
-                <span>Camisa: {colaboradorEntrega.tallaCamisa}</span>
-                <span>Pantalón: {colaboradorEntrega.tallaPantalon}</span>
-                <span>Botas: {colaboradorEntrega.tallaBotas}</span>
-              </div>
-            )}
 
             {alertaDotacionEntrega && (
               <div style={{ ...mensajeApp(alertaDotacionEntrega.tipo), gridColumn: "1 / -1", display: "grid", alignItems: "start" }}>

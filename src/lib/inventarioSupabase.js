@@ -1,4 +1,5 @@
 import { catalogoProductosBase } from "../data/inventario"
+import { camposTallasColaborador } from "../data/tallas"
 import { normalizarTalla, obtenerStockMinimo } from "../utils/inventario"
 
 import { obtenerSesionActiva, supabase } from "./supabase"
@@ -87,6 +88,10 @@ export function colaboradorDesdeSupabase(item) {
     tallaAntifluido: normalizarTalla(item.talla_antifluido),
     tallaBata: normalizarTalla(item.talla_bata),
     tallaCamisa: normalizarTalla(item.talla_camisa),
+    tallaCamisetaManufactura: normalizarTalla(item.talla_camiseta_manufactura ??
+      (normalizarTalla(item.talla_camisa) && normalizarTalla(item.talla_camisa) !== "N/A" ? item.talla_camisa : item.talla_antifluido)),
+    tallaCamisaPolo: normalizarTalla(item.talla_camisa_polo ?? item.talla_camisa),
+    tallaChaquetaJean: normalizarTalla(item.talla_chaqueta_jean ?? item.talla_camisa),
     tallaPantalon: item.talla_pantalon,
     tallaBotas: item.talla_botas,
   }
@@ -104,11 +109,9 @@ export function colaboradorParaSupabase(colaborador) {
     tipo_dotacion: colaborador.tipoDotacion || "No aplica",
     sexo: colaborador.sexo,
     estado: colaborador.estado,
-    talla_antifluido: normalizarTalla(colaborador.tallaAntifluido),
-    talla_bata: normalizarTalla(colaborador.tallaBata),
-    talla_camisa: normalizarTalla(colaborador.tallaCamisa),
-    talla_pantalon: colaborador.tallaPantalon,
-    talla_botas: colaborador.tallaBotas,
+    ...Object.fromEntries(camposTallasColaborador
+      .filter(({ campo }) => campo in colaborador)
+      .map(({ campo, columna }) => [columna, normalizarTalla(colaborador[campo])])),
   }
 }
 
@@ -298,10 +301,14 @@ async function cargarColaboradoresInventario() {
   const columnasBase = "id, identificacion, nombre_completo, cargo, sub_area, grupo, centro_costos, nombre_centro_costos, sexo, estado, talla_antifluido, talla_bata, talla_camisa, talla_pantalon, talla_botas"
   const respuesta = await supabase
     .from("colaboradores")
-    .select(`${columnasBase}, tipo_dotacion`)
+    .select(`${columnasBase}, tipo_dotacion, talla_camiseta_manufactura, talla_camisa_polo, talla_chaqueta_jean`)
     .order("nombre_completo")
 
   if (!respuesta.error) return respuesta
+
+  const anterior = await supabase.from("colaboradores")
+    .select(`${columnasBase}, tipo_dotacion`).order("nombre_completo")
+  if (!anterior.error) return anterior
 
   const respaldo = await supabase
     .from("colaboradores")

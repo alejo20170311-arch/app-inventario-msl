@@ -90,7 +90,7 @@ async function leerXlsx(archivo) {
   }).filter((fila) => fila.some(Boolean))
 }
 
-async function leerFilasArchivo(archivo) {
+export async function leerFilasArchivo(archivo) {
   const nombre = archivo.name.toLowerCase()
 
   if (nombre.endsWith(".xlsx")) {

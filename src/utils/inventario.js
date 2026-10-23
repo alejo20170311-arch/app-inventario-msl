@@ -21,7 +21,7 @@ export function tallaValida(talla) {
 }
 
 export function normalizarTalla(talla) {
-  const valor = String(talla || "").trim()
+  const valor = String(talla || "").trim().replace(/^talla\s+/i, "")
 
   if (!valor) return ""
 
@@ -92,9 +92,11 @@ export function productoRequiereTalla(producto) {
     tipo === "uniforme" ||
     tipo === "camisa" ||
     tipo === "camiseta" ||
+    tipo === "chaqueta" ||
     tipo === "pantalon" ||
     tipo === "jean" ||
     nombre.includes("camiseta") ||
+    nombre.includes("chaqueta") ||
     nombre.includes("antifluido")
 }
 export function productoSugeridoParaColaborador(producto, colaborador) {
@@ -102,37 +104,9 @@ export function productoSugeridoParaColaborador(producto, colaborador) {
   if (normalizarTexto(producto.categoria) !== "dotacion") return false
   if (!productoIncluidoEnTipoDotacion(producto, colaborador.tipoDotacion)) return false
 
-  const nombre = producto.nombre.toLowerCase()
-  const tipo = producto.tipo.toLowerCase()
-  const variante = String(producto.variante)
-
   if (!productoAplicaSexoColaborador(producto, colaborador)) return false
-
-  if (tipo === "calzado") {
-    return tallaCoincide(colaborador.tallaBotas, variante)
-  }
-
-  if (tipo === "bata") {
-    return tallaCoincide(colaborador.tallaBata, variante)
-  }
-
-  if (tipo === "uniforme" || nombre.includes("antifluido")) {
-    return tallaCoincide(colaborador.tallaAntifluido, variante)
-  }
-
-  if (tipo === "camisa" || tipo === "camiseta" || nombre.includes("camiseta")) {
-    const tallaCamiseta = tallaValida(colaborador.tallaCamisa)
-      ? colaborador.tallaCamisa
-      : colaborador.tallaAntifluido
-
-    return tallaCoincide(tallaCamiseta, variante)
-  }
-
-  if (tipo === "pantalon" || tipo === "jean") {
-    return tallaCoincide(colaborador.tallaPantalon, variante)
-  }
-
-  return !productoRequiereTalla(producto)
+  return !productoRequiereTalla(producto) ||
+    tallaCoincide(tallaProductoParaColaborador(producto, colaborador), producto.variante)
 }
 
 export function tallaProductoParaColaborador(producto, colaborador) {
@@ -143,12 +117,22 @@ export function tallaProductoParaColaborador(producto, colaborador) {
 
   if (tipo === "calzado") return normalizarTalla(colaborador.tallaBotas)
   if (tipo === "bata") return normalizarTalla(colaborador.tallaBata)
-  if (tipo === "uniforme" || nombre.includes("antifluido")) return normalizarTalla(colaborador.tallaAntifluido)
+  if (tipo === "chaqueta" || nombre.includes("chaqueta") ||
+    (nombre.includes("jean") && (nombre.includes("mtto") || nombre.includes("mantenimiento")))) {
+    return normalizarTalla(colaborador.tallaChaquetaJean ?? colaborador.tallaCamisa)
+  }
+  if (nombre.includes("polo")) return normalizarTalla(colaborador.tallaCamisaPolo ?? colaborador.tallaCamisa)
+  if (nombre.includes("antifluido") || (tipo === "uniforme" && !nombre.includes("camiseta"))) return normalizarTalla(colaborador.tallaAntifluido)
 
   if (tipo === "camisa" || tipo === "camiseta" || nombre.includes("camiseta")) {
-    return normalizarTalla(tallaValida(colaborador.tallaCamisa)
+    const tallaAnterior = tallaValida(colaborador.tallaCamisa)
       ? colaborador.tallaCamisa
-      : colaborador.tallaAntifluido)
+      : colaborador.tallaAntifluido
+    const esCamisetaManufactura = (tipo === "camiseta" || nombre.includes("camiseta")) &&
+      !/promotor|venta/.test(nombre)
+    return normalizarTalla(esCamisetaManufactura
+      ? colaborador.tallaCamisetaManufactura ?? tallaAnterior
+      : colaborador.tallaCamisa)
   }
 
   if (tipo === "pantalon" || tipo === "jean") return normalizarTalla(colaborador.tallaPantalon)

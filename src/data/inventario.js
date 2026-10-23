@@ -136,6 +136,9 @@ export const colaboradorVacio = {
   tallaAntifluido: "N/A",
   tallaBata: "N/A",
   tallaCamisa: "N/A",
+  tallaCamisetaManufactura: "N/A",
+  tallaCamisaPolo: "N/A",
+  tallaChaquetaJean: "N/A",
   tallaPantalon: "N/A",
   tallaBotas: "",
 }
