@@ -2929,6 +2929,7 @@ function App() {
       tallaCamisetaManufactura: item.tallaCamisetaManufactura,
       tallaCamisaPolo: item.tallaCamisaPolo,
       tallaChaquetaJean: item.tallaChaquetaJean,
+      tallaChalecoPromotor: item.tallaChalecoPromotor,
       tallaPantalon: item.tallaPantalon,
       tallaBotas: item.tallaBotas,
     })

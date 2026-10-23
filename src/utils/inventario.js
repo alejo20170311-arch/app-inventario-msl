@@ -93,10 +93,12 @@ export function productoRequiereTalla(producto) {
     tipo === "camisa" ||
     tipo === "camiseta" ||
     tipo === "chaqueta" ||
+    tipo === "chaleco" ||
     tipo === "pantalon" ||
     tipo === "jean" ||
     nombre.includes("camiseta") ||
     nombre.includes("chaqueta") ||
+    nombre.includes("chaleco") ||
     nombre.includes("antifluido")
 }
 export function productoSugeridoParaColaborador(producto, colaborador) {
@@ -116,6 +118,7 @@ export function tallaProductoParaColaborador(producto, colaborador) {
   const tipo = String(producto.tipo || "").toLowerCase()
 
   if (tipo === "calzado") return normalizarTalla(colaborador.tallaBotas)
+  if (tipo === "chaleco" || nombre.includes("chaleco")) return normalizarTalla(colaborador.tallaChalecoPromotor)
   if (tipo === "bata") return normalizarTalla(colaborador.tallaBata)
   if (tipo === "chaqueta" || nombre.includes("chaqueta") ||
     (nombre.includes("jean") && (nombre.includes("mtto") || nombre.includes("mantenimiento")))) {

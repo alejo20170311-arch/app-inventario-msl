@@ -62,8 +62,8 @@ let esquemaTallasVerificado = false
 export async function verificarEsquemaTallas() {
   if (esquemaTallasVerificado) return
   const { error } = await supabase.from("colaboradores")
-    .select("talla_camiseta_manufactura,talla_camisa_polo,talla_chaqueta_jean").limit(0)
-  if (error) throw new Error("No se pudo verificar la estructura de tallas. Aplica la migracion actualizar_tallas_dotacion_2026_10_23.sql en Supabase y verifica tu conexion y permisos.")
+    .select("talla_camiseta_manufactura,talla_camisa_polo,talla_chaqueta_jean,talla_chaleco_promotor").limit(0)
+  if (error) throw new Error("No se pudo verificar la estructura de tallas. Aplica la migracion agregar_chaleco_promotores_2026_10_23.sql en Supabase y verifica tu conexion y permisos.")
   esquemaTallasVerificado = true
 }
 

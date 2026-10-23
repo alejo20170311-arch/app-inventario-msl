@@ -46,6 +46,35 @@ test("rechaza documentos duplicados incluso con distinta puntuacion", () => {
   assert.throws(() => interpretarColaboradores([["Documento", "Talla bata"], ["1.234", "S"], ["1234", "M"]]), /repetido/)
 })
 
+test("importa camisa, zapatos, pantalon y chaleco de promotores en sus campos", () => {
+  const [fila] = interpretarColaboradores([
+    ["Documento", "Camisa", "Zapatos", "Pantalon", "Chaleco"],
+    ["123", "2XL", "37", "14", "L"],
+  ], { soloTallas: true })
+  assert.deepEqual(fila.datos, {
+    identificacion: "123", tallaCamisa: "2XL", tallaBotas: "37", tallaPantalon: "14", tallaChalecoPromotor: "L",
+  })
+  assert.equal("tallaCamisetaManufactura" in fila.datos, false)
+})
+
+test("acepta el anterior encabezado de camiseta promotor sin perder la talla", () => {
+  const [fila] = interpretarColaboradores([
+    ["Documento", "Camiseta Promotor de Venta"], ["123", "M"],
+  ], { soloTallas: true })
+  assert.equal(fila.datos.tallaCamisa, "M")
+  assert.equal("tallaChalecoPromotor" in fila.datos, false)
+})
+
+test("el chaleco sugerido usa su talla independiente y requiere asignacion", () => {
+  const chaleco = { nombre: "Chaleco Home Center", tipo: "Chaleco", categoria: "Dotacion", variante: "XS" }
+  const persona = { tallaCamisa: "L", tallaChalecoPromotor: "XS", tipoDotacion: chaleco.nombre }
+  assert.equal(tallaProductoParaColaborador(chaleco, persona), "XS")
+  assert.equal(productoSugeridoParaColaborador(chaleco, persona), true)
+  assert.equal(productoSugeridoParaColaborador({ ...chaleco, variante: "L" }, persona), false)
+  assert.equal(productoSugeridoParaColaborador(chaleco, { ...persona, tallaChalecoPromotor: "N/A" }), false)
+  assert.equal(productoSugeridoParaColaborador(chaleco, { ...persona, tipoDotacion: "Bono Sodexo" }), false)
+})
+
 test("las prendas usan tallas independientes sin mezclar manufactura, polo y promotor", () => {
   const colaborador = {
     tallaCamisetaManufactura: "L", tallaCamisaPolo: "M", tallaChaquetaJean: "S", tallaCamisa: "XL",

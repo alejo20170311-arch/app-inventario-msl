@@ -92,6 +92,7 @@ export function colaboradorDesdeSupabase(item) {
       (normalizarTalla(item.talla_camisa) && normalizarTalla(item.talla_camisa) !== "N/A" ? item.talla_camisa : item.talla_antifluido)),
     tallaCamisaPolo: normalizarTalla(item.talla_camisa_polo ?? item.talla_camisa),
     tallaChaquetaJean: normalizarTalla(item.talla_chaqueta_jean ?? item.talla_camisa),
+    tallaChalecoPromotor: normalizarTalla(item.talla_chaleco_promotor ?? "N/A"),
     tallaPantalon: item.talla_pantalon,
     tallaBotas: item.talla_botas,
   }
@@ -301,10 +302,14 @@ async function cargarColaboradoresInventario() {
   const columnasBase = "id, identificacion, nombre_completo, cargo, sub_area, grupo, centro_costos, nombre_centro_costos, sexo, estado, talla_antifluido, talla_bata, talla_camisa, talla_pantalon, talla_botas"
   const respuesta = await supabase
     .from("colaboradores")
-    .select(`${columnasBase}, tipo_dotacion, talla_camiseta_manufactura, talla_camisa_polo, talla_chaqueta_jean`)
+    .select(`${columnasBase}, tipo_dotacion, talla_camiseta_manufactura, talla_camisa_polo, talla_chaqueta_jean, talla_chaleco_promotor`)
     .order("nombre_completo")
 
   if (!respuesta.error) return respuesta
+
+  const sinChaleco = await supabase.from("colaboradores")
+    .select(`${columnasBase}, tipo_dotacion, talla_camiseta_manufactura, talla_camisa_polo, talla_chaqueta_jean`).order("nombre_completo")
+  if (!sinChaleco.error) return sinChaleco
 
   const anterior = await supabase.from("colaboradores")
     .select(`${columnasBase}, tipo_dotacion`).order("nombre_completo")
