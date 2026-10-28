@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   productoPedidoDotacionParaColaborador,
+  productoPedidoDotacionSinTallaParaColaborador,
   productoSugeridoParaColaborador,
 } from "./inventario.js"
 
@@ -26,6 +27,27 @@ test("sugiere la dotacion asignada con la talla y el sexo del colaborador", () =
   assert.equal(productoSugeridoParaColaborador({ ...uniforme, variante: "M" }, colaborador), false)
   assert.equal(productoSugeridoParaColaborador(uniforme, { ...colaborador, sexo: "Masculino" }), false)
   assert.equal(productoPedidoDotacionParaColaborador(uniforme, colaborador), true)
+})
+
+test("los nuevos pedidos separan cofias por sexo y dejan de pedir la unisex", () => {
+  const base = { categoria: "Dotacion", tipo: "Cofia", variante: "Unica" }
+  const hombre = { ...base, nombre: "MSL Cofia hombre" }
+  const mujer = { ...base, nombre: "MSL Cofia mujer" }
+  const unisex = { ...base, nombre: "MSL Cofia unisex" }
+  for (const funcion of [productoPedidoDotacionParaColaborador, productoPedidoDotacionSinTallaParaColaborador]) {
+    assert.equal(funcion(mujer, colaborador), true)
+    assert.equal(funcion(hombre, colaborador), false)
+    assert.equal(funcion(unisex, colaborador), false)
+    assert.equal(funcion(hombre, { ...colaborador, sexo: "Masculino" }), true)
+    assert.equal(funcion(mujer, { ...colaborador, sexo: "Masculino" }), false)
+    assert.equal(funcion(unisex, { ...colaborador, sexo: "Masculino" }), false)
+    assert.equal(funcion(hombre, { ...colaborador, sexo: "" }), false)
+    assert.equal(funcion(mujer, { ...colaborador, tipoDotacion: "Bono Sodexo" }), false)
+    assert.equal(funcion(mujer, { ...colaborador, tipoDotacion: "MSL Cofia mujer" }), true)
+    assert.equal(funcion(hombre, { ...colaborador, tipoDotacion: "MSL Cofia mujer", sexo: "Masculino" }), false)
+  }
+  // Existing stock can still be delivered using its original assignment.
+  assert.equal(productoSugeridoParaColaborador(unisex, colaborador), true)
 })
 
 test("no sugiere prendas de otras dotaciones aunque coincida la talla", () => {

@@ -144,14 +144,29 @@ export function tallaProductoParaColaborador(producto, colaborador) {
 }
 
 export function productoPedidoDotacionSinTallaParaColaborador(producto, colaborador) {
+  const cofia = cofiaParaNuevoPedido(producto, colaborador)
+  if (cofia !== null) return cofia
   return productoIncluidoEnTipoDotacion(producto, colaborador?.tipoDotacion) &&
     productoAplicaSexoColaborador(producto, colaborador) &&
     (!productoRequiereTalla(producto) || tallaValida(tallaProductoParaColaborador(producto, colaborador)))
 }
 
 export function productoPedidoDotacionParaColaborador(producto, colaborador) {
+  const cofia = cofiaParaNuevoPedido(producto, colaborador)
+  if (cofia !== null) return cofia
   return productoIncluidoEnTipoDotacion(producto, colaborador?.tipoDotacion) &&
     productoSugeridoParaColaborador(producto, colaborador)
+}
+
+function cofiaParaNuevoPedido(producto, colaborador) {
+  const nombre = normalizarTexto(producto.nombre)
+  if (normalizarTexto(producto.categoria) !== "dotacion" || !nombre.includes("cofia")) return null
+  if (!colaborador || nombre.includes("unisex")) return false
+  if (!/hombre|mujer/.test(nombre) || !productoAplicaSexoColaborador(producto, colaborador)) return false
+  const asignaciones = String(colaborador.tipoDotacion || "").split("+").map(normalizarTexto)
+  if (asignaciones.includes("noaplica")) return false
+  return asignaciones.some(nombre => /^(msl)?cofiaunisex$/.test(nombre)) ||
+    productoIncluidoEnTipoDotacion(producto, colaborador.tipoDotacion)
 }
 export function normalizarBusqueda(texto) {
   return String(texto || "")
